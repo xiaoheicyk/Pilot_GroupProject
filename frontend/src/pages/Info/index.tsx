@@ -1,7 +1,31 @@
+import { useAppSelector } from "../../app/hooks"
 import SectionCard from "../../components/SectionCard"
 import { Field, FieldArray, ErrorMessage } from "formik"
+import {
+  selectLoginStatus,
+  selectOnBoardingStatus,
+  selectUser,
+} from "../../features/auth/authSlice"
+import { useEffect, useState } from "react"
+import { useNavigate } from "react-router"
 
 const Info = () => {
+  const loginStatus = useAppSelector(selectLoginStatus)
+  const user = useAppSelector(selectUser)
+  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
+  const navigate = useNavigate()
+  const [feedback, setFeedback] = useState<string>("")
+
+  useEffect(() => {
+    if (loginStatus) {
+      if (onBoardingStatus === "rejected") {
+        setFeedback("error")
+      }
+    } else {
+      void navigate("/login")
+    }
+  }, [loginStatus, user, onBoardingStatus, navigate])
+
   /* In real life fetch this from Redux / API. */
   const personalInfo = {
     /* Name */
@@ -71,9 +95,44 @@ const Info = () => {
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 p-6">
+      {/* =====  Feedback  ===== */}
+      {(onBoardingStatus === "pending" || onBoardingStatus === "rejected") && (
+        <SectionCard
+          title="Onboarding Status"
+          editable={false}
+          submitted={true}
+          initialValues={{}}
+          onSubmit={() => {
+            return
+          }}
+          display={() => {
+            console.log(onBoardingStatus)
+            console.log(feedback)
+            return (
+              <p
+                className={
+                  onBoardingStatus === "pending"
+                    ? "text-sm text-amber-700"
+                    : "text-sm text-red-700"
+                }
+              >
+                {onBoardingStatus === "pending" &&
+                  "Your information is under reviewing."}
+                {onBoardingStatus === "rejected" && feedback}
+              </p>
+            )
+          }}
+        >
+          {/* no editable fields */}
+          <></>
+        </SectionCard>
+      )}
+
       {/* =====  Name  ===== */}
       <SectionCard
         title="Name & Identity"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save name", v)
@@ -134,6 +193,8 @@ const Info = () => {
       {/* =====  Address  ===== */}
       <SectionCard
         title="Address"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save address", v)
@@ -156,6 +217,8 @@ const Info = () => {
       {/* ===== Contact Info ===== */}
       <SectionCard
         title="Contact Info"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save contact", v)
@@ -182,6 +245,8 @@ const Info = () => {
       {/* ===== Employment ===== */}
       <SectionCard
         title="Employment"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save employment", v)
@@ -213,6 +278,8 @@ const Info = () => {
       {/* ===== Emergency Contact ===== */}
       <SectionCard
         title="Emergency Contact(s)"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save emergency", v)
@@ -284,6 +351,8 @@ const Info = () => {
       {/* ===== Documents ===== */}
       <SectionCard
         title="Documents"
+        editable={true}
+        submitted={onBoardingStatus !== "unsubmitted"}
         initialValues={personalInfo}
         onSubmit={v => {
           console.log("save docs", v)

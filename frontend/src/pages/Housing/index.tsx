@@ -1,11 +1,14 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { format } from "date-fns"
 import { Plus, MessageCircle } from "lucide-react"
 import { v4 as uuid } from "uuid"
+import { useAppSelector } from "../../app/hooks"
+import {
+  selectLoginStatus,
+  selectOnBoardingStatus,
+} from "../../features/auth/authSlice"
+import { useNavigate } from "react-router"
 
-/* -------------------------------------------------------------------
- * Types
- * ------------------------------------------------------------------- */
 type Status = "OPEN" | "IN_PROGRESS" | "CLOSED"
 
 type Comment = {
@@ -25,9 +28,6 @@ type Report = {
   comments: Comment[]
 }
 
-/* -------------------------------------------------------------------
- * Fake auth + data
- * ------------------------------------------------------------------- */
 const currentUser = "John Doe"
 
 const mockHouse = {
@@ -58,14 +58,24 @@ const initialReports: Report[] = [
   },
 ]
 
-/* -------------------------------------------------------------------
- * Main page
- * ------------------------------------------------------------------- */
 const HousingPage = () => {
+  const loginStatus = useAppSelector(selectLoginStatus)
+  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
+  const navigate = useNavigate()
   const [reports, setReports] = useState<Report[]>(initialReports)
   const [selected, setSelected] = useState<Report | null>(null)
   const [newTitle, setNewTitle] = useState("")
   const [newBody, setNewBody] = useState("")
+
+  useEffect(() => {
+    if (loginStatus) {
+      if (onBoardingStatus !== "approved") {
+        void navigate("/info")
+      }
+    } else {
+      void navigate("/login")
+    }
+  }, [loginStatus, onBoardingStatus, navigate])
 
   /* derived list: only current user’s reports */
   const myReports = useMemo(
@@ -213,9 +223,6 @@ const HousingPage = () => {
 
 export default HousingPage
 
-/* -------------------------------------------------------------------
- * Helpers
- * ------------------------------------------------------------------- */
 const StatusChip = ({ status }: { status: Status }) => {
   const cls: Record<Status, string> = {
     OPEN: "bg-amber-100 text-amber-800",
