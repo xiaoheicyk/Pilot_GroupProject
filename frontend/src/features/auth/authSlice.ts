@@ -6,7 +6,7 @@ export type AuthState = {
   token: string
   username: string
   email: string
-  role: string
+  role: "EMPLOYEE" | "HR" | null
   onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
   login: boolean
 }
@@ -18,7 +18,7 @@ const initialState: AuthState = {
   email: "",
   role: "EMPLOYEE",
   onBoardingStatus: "unsubmitted",
-  login: false,
+  login: true,
 }
 
 export type AuthPayload = {
@@ -26,7 +26,7 @@ export type AuthPayload = {
   token: string
   username: string
   email: string
-  role: string
+  role: "EMPLOYEE" | "HR" | null
   onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
 }
 
@@ -48,7 +48,7 @@ export const authSlice = createAppSlice({
       state.token = ""
       state.username = ""
       state.email = ""
-      state.role = ""
+      state.role = null
       state.onBoardingStatus = "unsubmitted"
       state.login = false
     }),

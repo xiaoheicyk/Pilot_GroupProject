@@ -8,6 +8,10 @@ export type SectionCardProps<T> = {
   title: string
   /** Regular (read-only) view */
   display: (values: T) => ReactNode
+  /** Whether the section is editable */
+  editable: boolean
+  /** Whether the section is submitted */
+  submitted?: boolean
   /** Editable view (Formik’s <Form> body) */
   children: ReactNode
 } & Omit<FormikConfig<T>, "children">
@@ -19,16 +23,18 @@ export type SectionCardProps<T> = {
 export default function SectionCard<T extends Record<string, unknown>>({
   title,
   display,
+  editable,
+  submitted,
   children,
   ...formikCfg
 }: SectionCardProps<T>) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(!submitted)
 
   return (
     <div className="w-full rounded-lg bg-white p-6 shadow">
       <header className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
-        {!editing && (
+        {editable && !editing && (
           <button
             className="rounded bg-indigo-600 px-3 py-1 text-sm text-white hover:bg-indigo-700"
             onClick={() => {

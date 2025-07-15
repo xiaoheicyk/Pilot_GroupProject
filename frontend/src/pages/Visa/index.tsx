@@ -1,6 +1,12 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { ChangeEvent } from "react"
 import { ShieldCheck, Upload, FileWarning } from "lucide-react"
+import { useAppSelector } from "../../app/hooks"
+import {
+  selectLoginStatus,
+  selectOnBoardingStatus,
+} from "../../features/auth/authSlice"
+import { useNavigate } from "react-router"
 
 type DocKey = "OPT_RECEIPT" | "OPT_EAD" | "I_983" | "I_20"
 
@@ -40,7 +46,20 @@ const canUploadNext = (docs: VisaWorkflow["docs"], key: DocKey) => {
 }
 
 const VisaStatusPage = () => {
+  const loginStatus = useAppSelector(selectLoginStatus)
+  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
+  const navigate = useNavigate()
   const [flow, setFlow] = useState(initial)
+
+  useEffect(() => {
+    if (loginStatus) {
+      if (onBoardingStatus !== "approved") {
+        void navigate("/info")
+      }
+    } else {
+      void navigate("/login")
+    }
+  }, [loginStatus, onBoardingStatus, navigate])
 
   if (flow.visaType !== "OPT")
     return (
