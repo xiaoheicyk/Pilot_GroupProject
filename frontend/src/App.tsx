@@ -3,6 +3,7 @@ import NavBar from "./components/NavBar"
 import Login from "./pages/Login"
 import Signup from "./pages/Signup"
 import Info from "./pages/Info"
+import Visa from "./pages/Visa"
 
 const Layout = () => {
   return (
@@ -23,6 +24,7 @@ const App = () => {
           <Route path="/signup" element={<Signup />} />
           <Route element={<Layout />}>
             <Route path="/info" element={<Info />} />
+            <Route path="/visa" element={<Visa />} />
           </Route>
         </Routes>
       </Router>
