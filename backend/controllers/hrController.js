@@ -1,4 +1,5 @@
 const OPT = require('../models/OPT');
+const House = require('../models/House');
 
 exports.reviewVisa = async (req, res) => {
     try {
@@ -22,3 +23,33 @@ exports.reviewVisa = async (req, res) => {
         res.status(500).json({ error: 'Server error', detail: err.message });
     }
 };
+
+exports.addHouse = async (req, res) => {
+    try {
+        const house = new House(req.body);
+        await house.save();
+        res.status(201).json({ message: 'House added', house });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+};
+
+exports.getAllHouses = async (req, res) => {
+    try {
+        const houses = await House.find({})
+        .populate('employeeId', 'firstName lastName phone email car')
+        .populate({
+            path: 'report',
+            populate: {
+            path: 'comments.user',
+            select: 'username'
+            }
+        })
+        .sort({ address: 1 });
+
+        res.json(houses);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+};
+
