@@ -145,7 +145,7 @@ exports.generateRegistrationToken = async (req, res) => {
 
         await newToken.save();
 
-        const link = `http://localhost:3000/register?token=${token}`;
+        const link = `http://localhost:3000/signup?token=${token}`;
         res.json({ message: 'Registration token created', link });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
