@@ -30,3 +30,18 @@ exports.uploadOptDocument = async (req, res) => {
         res.status(500).json({ error: 'Server error', detail: err.message });
     }
 };
+
+exports.getOptStatus = async (req, res) => {
+    try {
+        const employee = await Employee.findOne({ userId: req.user.id });
+        if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+        const opt = await OPT.findOne({ employee: employee._id });
+        if (!opt) return res.json({ message: 'No OPT uploaded yet' });
+
+        res.json(opt);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', detail: err.message });
+    }
+};
+
