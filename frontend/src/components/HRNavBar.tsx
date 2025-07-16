@@ -2,43 +2,26 @@ import { useState } from "react"
 import { Link, NavLink } from "react-router"
 import { Menu, X } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "../app/hooks"
-import { logout, selectRole, selectToken } from "../features/auth/authSlice"
+import { logout, selectToken } from "../features/auth/authSlice"
 
 type NavItem = {
   to: string
   label: string
 }
 
-/* ------------ 1. Maps role ➜ set of links ------------- */
-const EMPLOYEE_LINKS: NavItem[] = [
-  { to: "/info", label: "Personal Info" },
-  { to: "/visa", label: "Visa Status" },
-  { to: "/housing", label: "Housing" },
-]
-
+/* HR specific navigation links */
 const HR_LINKS: NavItem[] = [
   { to: "/hr", label: "Home" },
   { to: "/hr/employee-profiles", label: "Employee Profiles" },
-  { to: "/hr/visa-management", label: "Visa Management" },
-  { to: "/hr/hiring", label: "Hiring" },
-  { to: "/hr/housing", label: "Housing Mgmt" },
+  { to: "/hr/visa-management", label: "Visa Status Management" },
+  { to: "/hr/hiring", label: "Hiring Management" },
+  { to: "/hr/housing-management", label: "Housing Management" },
 ]
 
-/* ------------ 2. Component ------------- */
-const NavBar = () => {
+const HRNavBar = () => {
   const [open, setOpen] = useState(false)
-
-  /* auth slice shape: { user: { role: "EMPLOYEE" | "HR" }, token: string | null } */
   const token = useAppSelector(selectToken)
   const dispatch = useAppDispatch()
-
-  const role = useAppSelector(selectRole)
-
-  /** links the current user should see */
-  const links: NavItem[] =
-    role === "EMPLOYEE" ? EMPLOYEE_LINKS : role === "HR" ? HR_LINKS : []
-
-  console.log(links)
 
   const handleLogout = () => {
     dispatch(logout())
@@ -54,7 +37,7 @@ const NavBar = () => {
     <header className="bg-white shadow-sm">
       <nav className="mx-auto flex max-w-7xl items-center justify-between p-4 md:px-6">
         {/* Brand */}
-        <Link to="/" className="text-xl font-bold text-indigo-700">
+        <Link to="/hr" className="text-xl font-bold text-indigo-700">
           HR Portal
         </Link>
 
@@ -71,7 +54,7 @@ const NavBar = () => {
 
         {/* Links – desktop */}
         <ul className="hidden gap-2 md:flex">
-          {links.map(({ to, label }) => (
+          {HR_LINKS.map(({ to, label }) => (
             <li key={to}>
               <NavLink
                 to={to}
@@ -108,7 +91,7 @@ const NavBar = () => {
       {/* Links – mobile dropdown */}
       {open && (
         <ul className="space-y-1 border-t p-4 md:hidden">
-          {links.map(({ to, label }) => (
+          {HR_LINKS.map(({ to, label }) => (
             <li key={to}>
               <NavLink
                 to={to}
@@ -151,4 +134,4 @@ const NavBar = () => {
   )
 }
 
-export default NavBar
+export default HRNavBar
