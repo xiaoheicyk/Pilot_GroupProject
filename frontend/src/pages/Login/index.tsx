@@ -39,7 +39,7 @@ const Login = () => {
       if (role === "EMPLOYEE") {
         void navigate("/info")
       } else if (role === "HR") {
-        void navigate("/404")
+        void navigate("/hr")
       }
     }
   })

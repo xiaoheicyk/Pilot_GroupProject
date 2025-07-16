@@ -53,9 +53,10 @@ const VisaStatusPage = () => {
 
   useEffect(() => {
     if (loginStatus) {
-      if (onBoardingStatus !== "approved") {
-        void navigate("/info")
-      }
+      // 暂时注释掉 onBoardingStatus 检查，以便于开发和测试
+      // if (onBoardingStatus !== "approved") {
+      //   void navigate("/info")
+      // }
     } else {
       void navigate("/login")
     }
