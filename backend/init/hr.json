@@ -1,0 +1,8 @@
+{
+    "email": "hr@example.com",
+    "username": "hradmin",
+    "password": "$2b$10$MsQRSa/ahnGDa0.bcZE7Pu8tMcgxyjopvqODbfI4/1tYlXtpuDgBi",
+    "role": "HR",
+    "createdAt": { "$date": { "$numberLong": "1721148000000" } },
+    "updatedAt": { "$date": { "$numberLong": "1721148000000" } }
+}
