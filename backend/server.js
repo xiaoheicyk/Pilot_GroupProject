@@ -15,6 +15,8 @@ app.use('/auth', require('./routes/authRoutes'));
 app.use('/employee', require('./routes/employeeRoutes'));
 app.use('/employee/opt', require('./routes/optRoutes'));
 app.use('/hr', require('./routes/hrRoutes'));
+app.use('/house', require('./routes/houseRoutes'));
+app.use('/report', require('./routes/reportRoutes'));
 
 
 const PORT = process.env.PORT || 5000;
