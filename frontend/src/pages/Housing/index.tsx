@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react"
 import { format } from "date-fns"
 import { Plus, MessageCircle } from "lucide-react"
-import { v4 as uuid } from "uuid"
 import { useAppSelector } from "../../app/hooks"
-import {
-  selectLoginStatus,
-  selectOnBoardingStatus,
-} from "../../features/auth/authSlice"
+import { selectLoginStatus, selectUser } from "../../features/auth/authSlice"
 import { useNavigate } from "react-router"
+import axios from "axios"
+import api from "../../api"
 
+/* ------------------------------------------------------------------ */
+/* Types                                                              */
+/* ------------------------------------------------------------------ */
 type Status = "OPEN" | "IN_PROGRESS" | "CLOSED"
 
 type Comment = {
@@ -23,106 +24,338 @@ type Report = {
   title: string
   description: string
   author: string
-  ts: string
+  ts: string // ISO
   status: Status
   comments: Comment[]
 }
 
-const currentUser = "John Doe"
-
-const mockHouse = {
-  address: "123 Main St, Apt 4B, Seattle, WA 98101",
-  roommates: [
-    { name: "Alice Smith", phone: "555-111-2222" },
-    { name: "Bob Chen", phone: "555-333-4444" },
-    { name: "John Doe", phone: "555-123-4567" },
-  ],
+type Roommate = {
+  name: string
+  phone: string
+}
+type House = {
+  address: string
+  roommates: Roommate[]
 }
 
-const initialReports: Report[] = [
-  {
-    id: "r1",
-    title: "Leaky faucet",
-    description: "Kitchen sink keeps dripping.",
-    author: "John Doe",
-    ts: "2025-07-14T18:00:00Z",
-    status: "IN_PROGRESS",
-    comments: [
-      {
-        id: "c1",
-        body: "Plumber scheduled for tomorrow.",
-        author: "HR",
-        ts: "2025-07-15T13:00:00Z",
-      },
-    ],
-  },
-]
+/* ------------------------------------------------------------------ */
+/* Backend response shapes                                            */
+/* ------------------------------------------------------------------ */
+/** Report from server (no populate) */
+type ServerReport = {
+  _id: string
+  title?: string
+  description?: string
+  timestamp?: string
+  status?: string // 'open'|'in progress'|'close'
+  comments?: ServerReportComment[]
+}
+/** Report returned in createReport/addComment wrapper {message,report} */
+type ServerReportWrapper = {
+  message?: string
+  report: ServerReport
+}
+/** Report comment in embedded array */
+type ServerReportComment = {
+  _id?: string
+  user?: string | { username?: string; role?: string; _id?: string }
+  content?: string
+  timestamp?: string
+}
 
-const HousingPage = () => {
+/** Comment list from getComments */
+type ServerCommentList = ServerReportComment[]
+
+/** House from server (see controller) */
+type ServerHouse = {
+  // we don't know exact shape; pick common fields & index fallback
+  _id?: string
+  address?: string // controller likely serializes address string
+  street1?: string
+  street2?: string
+  city?: string
+  state?: string
+  zip?: string
+  employeeId?: {
+    firstName?: string
+    lastName?: string
+    cellPhone?: string
+    _id?: string
+  }[]
+  // allow any
+  [k: string]: unknown
+}
+
+/* ------------------------------------------------------------------ */
+/* API endpoints                                                      */
+/* ------------------------------------------------------------------ */
+/* Update to match your Express router if different */
+const API_HOUSE_ME = (id: string) => `/housing/${id}` // GET -> getMyHouse
+const API_REPORTS_MY = "/report/maintenance" // GET -> getMyReports
+const API_REPORTS_CREATE = "/report/employee/maintenance" // POST -> createReport
+const API_REPORTS_COMMENT = "/housing/reports/comment" // POST -> addComment (expects body.reportId & body.content)
+const API_REPORTS_COMMENTS = (id: string) => `/housing/reports/${id}/comments` // GET -> getComments
+
+/* ------------------------------------------------------------------ */
+/* Normalizers                                                        */
+/* ------------------------------------------------------------------ */
+const toStatus = (s?: string): Status => {
+  const u = (s ?? "").toLowerCase()
+  switch (u) {
+    case "in progress":
+    case "in_progress":
+    case "inprogress":
+      return "IN_PROGRESS"
+    case "close":
+    case "closed":
+      return "CLOSED"
+    case "open":
+    default:
+      return "OPEN"
+  }
+}
+
+const fmt = (iso?: string, pattern = "yyyy-MM-dd HH:mm") => {
+  if (!iso) return ""
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? "" : format(d, pattern)
+}
+
+/* Extract username from comment.user (string id or populated object). */
+const userLabel = (u: ServerReportComment["user"]): string => {
+  if (!u) return "User"
+  if (typeof u === "string") return "User"
+  return u.username ?? "User"
+}
+
+const normComment = (c: ServerReportComment): Comment => ({
+  id: c._id ?? crypto.randomUUID(),
+  body: c.content ?? "",
+  author: userLabel(c.user),
+  ts: c.timestamp ?? "",
+})
+
+const normReport = (r: ServerReport, fallbackAuthor: string): Report => ({
+  id: r._id,
+  title: r.title ?? "",
+  description: r.description ?? "",
+  author: fallbackAuthor, // server doesn't populate; we show current user
+  ts: r.timestamp ?? "",
+  status: toStatus(r.status),
+  comments: (r.comments ?? []).map(normComment),
+})
+
+/* House: build printable address string gracefully. */
+const normHouse = (h: ServerHouse): House => {
+  const line =
+    h.address ??
+    [h.street1, h.street2, h.city, h.state, h.zip].filter(Boolean).join(", ")
+
+  const roommates: Roommate[] = Array.isArray(h.employeeId)
+    ? h.employeeId.map(e => ({
+        name: `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim(),
+        phone: e.cellPhone ?? "",
+      }))
+    : []
+
+  return {
+    address: line || "—",
+    roommates,
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* API helpers                                                        */
+/* ------------------------------------------------------------------ */
+async function fetchHouse(id: string): Promise<House> {
+  const res = await api.get<ServerHouse>(API_HOUSE_ME(id))
+  return normHouse(res.data)
+}
+
+async function fetchMyReports(currentUsername: string): Promise<Report[]> {
+  const res = await api.get<ServerReport[]>(API_REPORTS_MY)
+  return res.data.map(r => normReport(r, currentUsername))
+}
+
+async function createReport(
+  payload: {
+    title: string
+    description: string
+  },
+  currentUsername: string,
+): Promise<Report> {
+  const res = await api.post<ServerReportWrapper>(API_REPORTS_CREATE, payload)
+  return normReport(res.data.report, currentUsername)
+}
+
+/* addComment controller expects body: {reportId, content} and returns {message, report} */
+async function postComment(
+  reportId: string,
+  content: string,
+  currentUsername: string,
+): Promise<Report> {
+  const res = await api.post<ServerReportWrapper>(API_REPORTS_COMMENT, {
+    reportId,
+    content,
+  })
+  return normReport(res.data.report, currentUsername)
+}
+
+/* getComments gives latest full comment list (populated) */
+async function fetchComments(reportId: string): Promise<Comment[]> {
+  const res = await api.get<ServerCommentList>(API_REPORTS_COMMENTS(reportId))
+  return res.data.map(normComment)
+}
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
+const Housing = () => {
   const loginStatus = useAppSelector(selectLoginStatus)
-  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
+  const user = useAppSelector(selectUser) // { username, ... }
   const navigate = useNavigate()
-  const [reports, setReports] = useState<Report[]>(initialReports)
+
+  /* house */
+  const [house, setHouse] = useState<House | null>(null)
+  const [houseErr, setHouseErr] = useState<string | null>(null)
+  const [houseLoading, setHouseLoading] = useState(true)
+
+  /* reports */
+  const [reports, setReports] = useState<Report[]>([])
+  const [reportsErr, setReportsErr] = useState<string | null>(null)
+  const [reportsLoading, setReportsLoading] = useState(true)
+
+  /* selected report for drawer */
   const [selected, setSelected] = useState<Report | null>(null)
+
+  /* new report form */
   const [newTitle, setNewTitle] = useState("")
   const [newBody, setNewBody] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [createErr, setCreateErr] = useState<string | null>(null)
 
+  /* gating */
   useEffect(() => {
-    if (loginStatus) {
-      // 暂时注释掉 onBoardingStatus 检查，以便于开发和测试
-      // if (onBoardingStatus !== "approved") {
-      //   void navigate("/info")
-      // }
-    } else {
+    if (!loginStatus) {
       void navigate("/login")
+      return
     }
-  }, [loginStatus, onBoardingStatus, navigate])
+  }, [loginStatus, navigate])
 
-  /* derived list: only current user’s reports */
+  /* load house */
+  useEffect(() => {
+    if (!loginStatus) return
+    void (async () => {
+      setHouseLoading(true)
+      setHouseErr(null)
+      try {
+        const h = await fetchHouse(user.id)
+        setHouse(h)
+      } catch (err: unknown) {
+        setHouseErr(extractErrMsg(err, "Failed to load housing details."))
+      } finally {
+        setHouseLoading(false)
+      }
+    })()
+  }, [loginStatus, user.id])
+
+  /* load my reports */
+  useEffect(() => {
+    if (!loginStatus) return
+    void (async () => {
+      setReportsLoading(true)
+      setReportsErr(null)
+      try {
+        const rs = await fetchMyReports(user.username)
+        setReports(rs)
+      } catch (err: unknown) {
+        setReportsErr(extractErrMsg(err, "Failed to load reports."))
+      } finally {
+        setReportsLoading(false)
+      }
+    })()
+  }, [loginStatus, user.username])
+
+  /* derived list: only mine (API already filters, but keep guard) */
   const myReports = useMemo(
-    () => reports.filter(r => r.author === currentUser),
-    [reports],
+    () => reports.filter(r => r.author === user.username),
+    [reports, user.username],
   )
 
-  /* add report */
-  const handleCreate = () => {
+  /* create report */
+  const handleCreate = async () => {
     if (!newTitle.trim() || !newBody.trim()) return
-    setReports(r => [
-      ...r,
-      {
-        id: uuid(),
-        title: newTitle,
-        description: newBody,
-        author: currentUser,
-        ts: new Date().toISOString(),
-        status: "OPEN",
-        comments: [],
-      },
-    ])
-    setNewTitle("")
-    setNewBody("")
+    setCreating(true)
+    setCreateErr(null)
+    try {
+      const newRep = await createReport(
+        {
+          title: newTitle.trim(),
+          description: newBody.trim(),
+        },
+        user.username,
+      )
+      setReports(r => [newRep, ...r])
+      setNewTitle("")
+      setNewBody("")
+      setSelected(newRep)
+    } catch (err: unknown) {
+      setCreateErr(extractErrMsg(err, "Failed to create report."))
+    } finally {
+      setCreating(false)
+    }
   }
 
   /* add comment */
-  const handleComment = (reportId: string, text: string) => {
+  const handleComment = async (reportId: string, text: string) => {
     if (!text.trim()) return
-    setReports(r =>
-      r.map(rep =>
-        rep.id === reportId
-          ? {
-              ...rep,
-              comments: [
-                ...rep.comments,
-                {
-                  id: uuid(),
-                  body: text,
-                  author: currentUser,
-                  ts: new Date().toISOString(),
-                },
-              ],
-            }
-          : rep,
-      ),
+    try {
+      const updated = await postComment(reportId, text.trim(), user.username)
+      // update global reports list
+      setReports(rs => rs.map(r => (r.id === reportId ? updated : r)))
+      // update drawer
+      setSelected(sel => (sel && sel.id === reportId ? updated : sel))
+    } catch (err: unknown) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to add comment", err)
+      alert(extractErrMsg(err, "Failed to add comment."))
+    }
+  }
+
+  /* When drawer opens, fetch fresh comments (populated) */
+  useEffect(() => {
+    if (!selected) return
+    void (async () => {
+      try {
+        const cmts = await fetchComments(selected.id)
+        setSelected(sel => (sel ? { ...sel, comments: cmts } : sel))
+        // also mirror into top-level reports
+        setReports(rs =>
+          rs.map(r => (r.id === selected.id ? { ...r, comments: cmts } : r)),
+        )
+      } catch (err) {
+        // ignore comment refresh errors
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]) // purposely depend on id only
+
+  /* Loading UI */
+  if (houseLoading || reportsLoading) {
+    return (
+      <main className="mx-auto w-full max-w-5xl p-6">
+        <p className="text-sm text-slate-600">Loading…</p>
+      </main>
+    )
+  }
+
+  /* Aggregate error UI */
+  if (houseErr || reportsErr) {
+    return (
+      <main className="mx-auto w-full max-w-5xl p-6 space-y-4">
+        {houseErr && <p className="text-sm text-red-600">{houseErr}</p>}
+        {reportsErr && <p className="text-sm text-red-600">{reportsErr}</p>}
+      </main>
     )
   }
 
@@ -131,21 +364,30 @@ const HousingPage = () => {
       {/* ---------- House details ---------- */}
       <section className="rounded-lg bg-white p-6 shadow">
         <h2 className="text-lg font-semibold text-slate-800">House Details</h2>
-        <p className="mt-2 text-slate-700">{mockHouse.address}</p>
+        <p className="mt-2 text-slate-700">
+          {house?.address ?? "No house assigned."}
+        </p>
 
         <h3 className="mt-4 font-medium text-slate-800">Roommates</h3>
-        <ul className="mt-1 space-y-1">
-          {mockHouse.roommates.map(rm => (
-            <li key={rm.phone} className="text-sm text-slate-700">
-              {rm.name} · {rm.phone}
-            </li>
-          ))}
-        </ul>
+        {house && house.roommates.length > 0 ? (
+          <ul className="mt-1 space-y-1">
+            {house.roommates.map(rm => (
+              <li
+                key={`${rm.name}-${rm.phone}`}
+                className="text-sm text-slate-700"
+              >
+                {rm.name} · {rm.phone}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-sm text-slate-500">No roommates listed.</p>
+        )}
       </section>
 
       {/* ---------- Create facility report ---------- */}
       <section className="rounded-lg bg-white p-6 shadow">
-        <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
           <Plus size={18} />
           New Facility Report
         </h2>
@@ -169,11 +411,15 @@ const HousingPage = () => {
             className="w-full rounded border border-slate-300 p-2"
           />
           <button
-            onClick={handleCreate}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            onClick={() => {
+              void handleCreate()
+            }}
+            disabled={creating}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Submit
+            {creating ? "Submitting…" : "Submit"}
           </button>
+          {createErr && <p className="text-sm text-red-600">{createErr}</p>}
         </div>
       </section>
 
@@ -195,9 +441,7 @@ const HousingPage = () => {
               >
                 <span>
                   <p className="font-medium text-slate-800">{r.title}</p>
-                  <p className="text-xs text-slate-500">
-                    {format(r.ts, "yyyy-MM-dd HH:mm")}
-                  </p>
+                  <p className="text-xs text-slate-500">{fmt(r.ts)}</p>
                 </span>
                 <StatusChip status={r.status} />
               </li>
@@ -213,17 +457,18 @@ const HousingPage = () => {
           onClose={() => {
             setSelected(null)
           }}
-          onComment={text => {
-            handleComment(selected.id, text)
-          }}
+          onComment={text => void handleComment(selected.id, text)}
         />
       )}
     </main>
   )
 }
 
-export default HousingPage
+export default Housing
 
+/* ------------------------------------------------------------------ */
+/* StatusChip                                                          */
+/* ------------------------------------------------------------------ */
 const StatusChip = ({ status }: { status: Status }) => {
   const cls: Record<Status, string> = {
     OPEN: "bg-amber-100 text-amber-800",
@@ -237,6 +482,9 @@ const StatusChip = ({ status }: { status: Status }) => {
   )
 }
 
+/* ------------------------------------------------------------------ */
+/* ReportDrawer                                                        */
+/* ------------------------------------------------------------------ */
 type DrawerProps = {
   report: Report
   onClose: () => void
@@ -274,7 +522,7 @@ const ReportDrawer = ({ report, onClose, onComment }: DrawerProps) => {
               {report.description}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              By {report.author} · {format(report.ts, "yyyy-MM-dd HH:mm")}
+              By {report.author} · {fmt(report.ts)}
             </p>
             <StatusChip status={report.status} />
           </section>
@@ -295,7 +543,7 @@ const ReportDrawer = ({ report, onClose, onComment }: DrawerProps) => {
                       {c.body}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      {c.author} · {format(c.ts, "yyyy-MM-dd HH:mm")}
+                      {c.author} · {fmt(c.ts)}
                     </p>
                   </li>
                 ))}
@@ -326,4 +574,17 @@ const ReportDrawer = ({ report, onClose, onComment }: DrawerProps) => {
       </aside>
     </div>
   )
+}
+
+/* ------------------------------------------------------------------ */
+/* Error extraction helper                                            */
+/* ------------------------------------------------------------------ */
+function extractErrMsg(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as
+      | { message?: string; error?: string }
+      | undefined
+    return data?.message ?? data?.error ?? err.message ?? fallback
+  }
+  return fallback
 }

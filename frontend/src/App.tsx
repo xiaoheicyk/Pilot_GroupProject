@@ -44,23 +44,32 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          
+          <Route path="/signup/:token" element={<Signup />} />
+
           {/* Employee Routes */}
           <Route element={<EmployeeLayout />}>
             <Route path="/info" element={<Info />} />
             <Route path="/visa" element={<Visa />} />
             <Route path="/housing" element={<Housing />} />
           </Route>
-          
+
           {/* HR Routes */}
           <Route element={<HRLayout />}>
             <Route path="/hr" element={<HRHome />} />
-            <Route path="/hr/employee-profiles" element={<EmployeeProfiles />} />
-            <Route path="/hr/employee-profiles/:id" element={<EmployeeDetail />} />
+            <Route
+              path="/hr/employee-profiles"
+              element={<EmployeeProfiles />}
+            />
+            <Route
+              path="/hr/employee-profiles/:id"
+              element={<EmployeeDetail />}
+            />
             <Route path="/hr/visa-management" element={<VisaManagement />} />
-            <Route path="/hr/hiring" element={<HiringManagement />} />
-            <Route path="/hr/housing-management" element={<HousingManagement />} />
+            {/* <Route path="/hr/hiring" element={<HiringManagement />} /> */}
+            <Route
+              path="/hr/housing-management"
+              element={<HousingManagement />}
+            />
           </Route>
         </Routes>
       </Router>

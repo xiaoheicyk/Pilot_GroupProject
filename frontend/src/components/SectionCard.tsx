@@ -50,7 +50,10 @@ export default function SectionCard<T extends Record<string, unknown>>({
         {({ handleSubmit, resetForm, dirty }) =>
           editing ? (
             <form
-              onSubmit={handleSubmit}
+              onSubmit={v => {
+                handleSubmit(v)
+                setEditing(false)
+              }}
               className="space-y-4"
               autoComplete="off"
             >
