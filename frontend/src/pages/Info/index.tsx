@@ -1,71 +1,254 @@
-import { useAppSelector } from "../../app/hooks"
-import SectionCard from "../../components/SectionCard"
+import { useEffect, useState } from "react"
+import { useNavigate } from "react-router"
+import axios from "axios"
+import api from "../../api" // <-- your configured axios instance
 import { Field, FieldArray, ErrorMessage } from "formik"
+import SectionCard from "../../components/SectionCard"
+import { useAppSelector, useAppDispatch } from "../../app/hooks"
 import {
   selectLoginStatus,
   selectOnBoardingStatus,
   selectUser,
+  selectRole,
+  login as loginAction,
 } from "../../features/auth/authSlice"
-import { useEffect, useState } from "react"
-import { useNavigate } from "react-router"
 
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
+type EmergencyContact = {
+  firstName: string
+  middleName: string
+  lastName: string
+  phone: string
+  email: string
+  relationship: string
+}
+type EmployeeFile = {
+  name: string
+  url: string
+}
+type EmployeeInfo = {
+  firstName: string
+  middleName: string
+  lastName: string
+  preferredName: string
+  email: string
+  ssn: string
+  dob: string
+  gender: string
+  building: string
+  street: string
+  city: string
+  state: string
+  zip: string
+  cellPhone: string
+  workPhone: string
+  visaTitle: string
+  visaStart: string
+  visaEnd: string
+  emergency: EmergencyContact[]
+  files: EmployeeFile[]
+}
+
+/* empty shell to keep controlled forms happy before load */
+const EMPTY_INFO: EmployeeInfo = {
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  preferredName: "",
+  email: "",
+  ssn: "",
+  dob: "",
+  gender: "n/a",
+  building: "",
+  street: "",
+  city: "",
+  state: "",
+  zip: "",
+  cellPhone: "",
+  workPhone: "",
+  visaTitle: "",
+  visaStart: "",
+  visaEnd: "",
+  emergency: [],
+  files: [],
+}
+
+/* ------------------------------------------------------------------ */
+/* API helpers (adjust endpoints as needed)                           */
+/* ------------------------------------------------------------------ */
+const employeeUrl = (id: string) => `/profile/${id}` // GET/PATCH
+const onboardingSubmitUrl = "/employee/onboarding"
+
+async function fetchEmployeeInfo(id: string): Promise<EmployeeInfo> {
+  const res = await api.get<EmployeeInfo>(employeeUrl(id))
+  return res.data
+}
+
+async function submitOnboarding(
+  id: string,
+  info: EmployeeInfo,
+): Promise<{
+  status: "pending" | "rejected" | "approved" | "unsubmitted"
+  feedback?: string
+}> {
+  const res = await api.post(onboardingSubmitUrl, {
+    id,
+    ...info,
+  })
+  return res.data
+}
+
+/* ------------------------------------------------------------------ */
+/* Component                                                           */
+/* ------------------------------------------------------------------ */
 const Info = () => {
-  const loginStatus = useAppSelector(selectLoginStatus)
-  const user = useAppSelector(selectUser)
-  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
   const navigate = useNavigate()
-  const [feedback, setFeedback] = useState<string>("")
+  const dispatch = useAppDispatch()
+
+  const loginStatus = useAppSelector(selectLoginStatus)
+  const authUser = useAppSelector(selectUser) // full auth state
+  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
+  const role = useAppSelector(selectRole)
+
+  const [info, setInfo] = useState<EmployeeInfo>(EMPTY_INFO)
+  const [loading, setLoading] = useState(true)
+  const [fetchErr, setFetchErr] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
 
   useEffect(() => {
-    if (loginStatus) {
-      if (onBoardingStatus === "rejected") {
-        setFeedback("error")
-      }
-    } else {
+    if (!loginStatus) {
       void navigate("/login")
+    } else if (role === "HR") {
+      void navigate("/hr")
     }
-  }, [loginStatus, user, onBoardingStatus, navigate])
+  }, [loginStatus, navigate, role])
 
-  /* In real life fetch this from Redux / API. */
-  const personalInfo = {
-    /* Name */
-    firstName: "John",
-    middleName: "A.",
-    lastName: "Doe",
-    preferredName: "Johnny",
-    email: "john@example.com",
-    ssn: "123456789",
-    dob: "1995-01-01",
-    gender: "male",
-    /* Address */
-    building: "123",
-    street: "Main St",
-    city: "Seattle",
-    state: "WA",
-    zip: "98101",
-    cellPhone: "555-123-4567",
-    workPhone: "",
-    visaTitle: "F-1 OPT",
-    visaStart: "2025-08-01",
-    visaEnd: "2028-08-01",
-    emergency: [
-      {
-        firstName: "Alice",
-        middleName: "",
-        lastName: "Smith",
-        phone: "555-987-6543",
-        email: "alice@example.com",
-        relationship: "Sister",
-      },
-    ],
-    files: [
-      /* example */
-      { name: "Driver-License.pdf", url: "/docs/driver-license.pdf" },
-      { name: "OPT-Receipt.pdf", url: "/docs/opt-receipt.pdf" },
-    ],
+  useEffect(() => {
+    if (!loginStatus) return
+    if (!authUser.id) return
+
+    let cancelled = false
+
+    const fetchInfo = async () => {
+      setLoading(true)
+      setFetchErr(null)
+      try {
+        const data = await fetchEmployeeInfo(authUser.id)
+        if (!cancelled) {
+          setInfo(data)
+        }
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          setFetchErr(
+            (err.response?.data as { message?: string } | undefined)?.message ??
+              err.message,
+          )
+        } else {
+          setFetchErr("Failed to load employee info.")
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void fetchInfo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loginStatus, authUser.id])
+
+  /* set HR rejection feedback if slice says rejected */
+  useEffect(() => {
+    if (loginStatus && onBoardingStatus === "rejected") {
+      // Replace with real feedback from backend if provided in auth slice
+      setFeedback("Your onboarding submission requires updates. See HR notes.")
+    }
+  }, [loginStatus, onBoardingStatus])
+
+  /* convenience: editable only when unsubmitted */
+  const editable = onBoardingStatus === "unsubmitted"
+
+  const saveName = (v: any) => {
+    setInfo({
+      ...info,
+      firstName: v.firstName,
+      middleName: v.middleName,
+      lastName: v.lastName,
+      preferredName: v.preferredName,
+      email: v.email,
+      ssn: v.ssn,
+      dob: v.dob,
+      gender: v.gender,
+    })
   }
 
-  /* Helper for labelled inputs */
+  const saveAddress = (v: any) => {
+    setInfo({
+      ...info,
+      address: {
+        building: v.building,
+        street: v.street,
+        city: v.city,
+        state: v.state,
+        zip: v.zip,
+      },
+    })
+  }
+
+  const saveContact = (v: any) => {
+    setInfo({
+      ...info,
+      contact: {
+        cellPhone: v.cellPhone,
+        workPhone: v.workPhone,
+      },
+    })
+  }
+
+  const saveEmployment = (v: any) => {
+    setInfo({
+      ...info,
+      employment: {
+        visaTitle: v.visaTitle,
+        visaStart: v.visaStart,
+        visaEnd: v.visaEnd,
+      },
+    })
+  }
+
+  const saveEmergency = (v: any) => {
+    setInfo({
+      ...info,
+      emergency: v.emergency,
+    })
+  }
+
+  const saveDocs = (v: any) => {
+    setInfo({
+      ...info,
+      docs: v.docs,
+    })
+  }
+
+  /* submit entire onboarding package */
+  const handleSubmitOnboarding = async () => {
+    const res = await submitOnboarding(authUser.id, info)
+    dispatch(
+      loginAction({
+        id: authUser.id,
+        token: authUser.token,
+        username: authUser.username,
+        email: authUser.email,
+        role: authUser.role,
+        onBoardingStatus: res.status,
+      }),
+    )
+  }
+
+  /* labeled input helper */
   const L = ({
     name,
     label,
@@ -93,50 +276,103 @@ const Info = () => {
     </div>
   )
 
+  /* loading / error states ------------------------------------------------ */
+  if (loading) {
+    return (
+      <main className="mx-auto w-full max-w-4xl p-6">
+        <p className="text-sm text-slate-600">Loading your information…</p>
+      </main>
+    )
+  }
+  if (fetchErr) {
+    return (
+      <main className="mx-auto w-full max-w-4xl p-6">
+        <p className="text-sm text-red-600">{fetchErr}</p>
+      </main>
+    )
+  }
+
+  /* shorthand values for SectionCard initialValues ----------------------- */
+  const nameVals = {
+    firstName: info.firstName,
+    middleName: info.middleName,
+    lastName: info.lastName,
+    preferredName: info.preferredName,
+    email: info.email,
+    ssn: info.ssn,
+    dob: info.dob,
+    gender: info.gender,
+  }
+  const addrVals = {
+    building: info.building,
+    street: info.street,
+    city: info.city,
+    state: info.state,
+    zip: info.zip,
+  }
+  const contactVals = {
+    cellPhone: info.cellPhone,
+    workPhone: info.workPhone,
+  }
+  const employmentVals = {
+    visaTitle: info.visaTitle,
+    visaStart: info.visaStart,
+    visaEnd: info.visaEnd,
+  }
+  const emergencyVals = { emergency: info.emergency }
+  const filesVals = { files: info.files }
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 p-6">
-      {/* =====  Feedback  ===== */}
+      {/* ===== Onboarding banner ===== */}
       {(onBoardingStatus === "pending" || onBoardingStatus === "rejected") && (
         <SectionCard
           title="Onboarding Status"
           editable={false}
-          submitted={true}
+          submitted
           initialValues={{}}
-          onSubmit={() => {
-            return
-          }}
-          display={() => {
-            console.log(onBoardingStatus)
-            console.log(feedback)
-            return (
-              <p
-                className={
-                  onBoardingStatus === "pending"
-                    ? "text-sm text-amber-700"
-                    : "text-sm text-red-700"
-                }
-              >
-                {onBoardingStatus === "pending" &&
-                  "Your information is under reviewing."}
-                {onBoardingStatus === "rejected" && feedback}
-              </p>
-            )
-          }}
+          onSubmit={() => undefined}
+          display={() => (
+            <p
+              className={
+                onBoardingStatus === "pending"
+                  ? "text-sm text-amber-700"
+                  : "text-sm text-red-700"
+              }
+            >
+              {onBoardingStatus === "pending" &&
+                "Your information is under reviewing."}
+              {onBoardingStatus === "rejected" && feedback}
+            </p>
+          )}
         >
-          {/* no editable fields */}
           <></>
         </SectionCard>
       )}
 
-      {/* =====  Name  ===== */}
+      {/* Submit full onboarding (visible only when unsubmitted) ------------ */}
+      {onBoardingStatus === "unsubmitted" && (
+        <div className="rounded-lg bg-white p-6 shadow">
+          <button
+            type="button"
+            onClick={() => {
+              void handleSubmitOnboarding()
+              return
+            }}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            Submit Onboarding Info
+          </button>
+        </div>
+      )}
+
+      {/* ===== Name & Identity ===== */}
       <SectionCard
         title="Name & Identity"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save name", v)
-        }}
+        initialValues={nameVals}
+        onSubmit={saveName}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
             <li>
@@ -190,15 +426,13 @@ const Info = () => {
         </div>
       </SectionCard>
 
-      {/* =====  Address  ===== */}
+      {/* ===== Address ===== */}
       <SectionCard
         title="Address"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save address", v)
-        }}
+        initialValues={addrVals}
+        onSubmit={saveAddress}
         display={v => (
           <p className="text-slate-700">
             {v.building} {v.street}, {v.city}, {v.state} {v.zip}
@@ -217,12 +451,10 @@ const Info = () => {
       {/* ===== Contact Info ===== */}
       <SectionCard
         title="Contact Info"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save contact", v)
-        }}
+        initialValues={contactVals}
+        onSubmit={saveContact}
         display={v => (
           <ul className="text-slate-700">
             <li>
@@ -245,12 +477,10 @@ const Info = () => {
       {/* ===== Employment ===== */}
       <SectionCard
         title="Employment"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save employment", v)
-        }}
+        initialValues={employmentVals}
+        onSubmit={saveEmployment}
         display={v => (
           <ul className="text-slate-700">
             <li>
@@ -275,18 +505,16 @@ const Info = () => {
         </div>
       </SectionCard>
 
-      {/* ===== Emergency Contact ===== */}
+      {/* ===== Emergency Contact(s) ===== */}
       <SectionCard
         title="Emergency Contact(s)"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save emergency", v)
-        }}
+        initialValues={emergencyVals}
+        onSubmit={saveEmergency}
         display={v => (
           <ul className="space-y-2 text-slate-700">
-            {v.emergency.map((c, idx) => (
+            {v.emergency.map((c: EmergencyContact, idx: number) => (
               <li key={idx}>
                 <span className="font-medium">
                   {c.firstName} {c.lastName}:
@@ -300,11 +528,10 @@ const Info = () => {
         <FieldArray name="emergency">
           {arrayHelpers => {
             const { form } = arrayHelpers
-            const contacts = form.values.emergency
-
+            const contacts: EmergencyContact[] = form.values.emergency
             return (
               <div className="space-y-6">
-                {contacts.map((_: any, idx: number) => (
+                {contacts.map((_, idx) => (
                   <div key={idx} className="grid grid-cols-3 gap-4">
                     <L name={`emergency.${idx}.firstName`} label="First name" />
                     <L name={`emergency.${idx}.middleName`} label="Middle" />
@@ -315,7 +542,6 @@ const Info = () => {
                       name={`emergency.${idx}.relationship`}
                       label="Relationship"
                     />
-
                     <button
                       type="button"
                       onClick={() => arrayHelpers.remove(idx)}
@@ -325,7 +551,6 @@ const Info = () => {
                     </button>
                   </div>
                 ))}
-
                 <button
                   type="button"
                   onClick={() => {
@@ -351,15 +576,13 @@ const Info = () => {
       {/* ===== Documents ===== */}
       <SectionCard
         title="Documents"
-        editable={true}
+        editable={editable}
         submitted={onBoardingStatus !== "unsubmitted"}
-        initialValues={personalInfo}
-        onSubmit={v => {
-          console.log("save docs", v)
-        }}
+        initialValues={filesVals}
+        onSubmit={saveDocs}
         display={v => (
           <ul className="space-y-1 text-slate-700">
-            {v.files.map((f, idx) => (
+            {v.files.map((f: EmployeeFile, idx: number) => (
               <li key={idx}>
                 <a
                   href={f.url}
@@ -377,43 +600,38 @@ const Info = () => {
         <FieldArray name="files">
           {arrayHelpers => {
             const { form } = arrayHelpers
-            const files = form.values.files
-
+            const files: EmployeeFile[] = form.values.files
             return (
               <div className="space-y-4">
-                {/* upload */}
                 <input
                   type="file"
                   onChange={e => {
                     const file = e.currentTarget.files?.[0]
                     if (file) {
+                      /* TODO: upload to storage, get URL from server */
                       arrayHelpers.push({
                         name: file.name,
-                        url: URL.createObjectURL(file), // TODO: replace with your S3 URL
+                        url: URL.createObjectURL(file),
                       })
                     }
                   }}
                 />
-
-                {/* list */}
                 <ul className="space-y-1">
-                  {files.map(
-                    (f: { name: string; url: string }, idx: number) => (
-                      <li
-                        key={idx}
-                        className="flex items-center justify-between rounded border p-2"
+                  {files.map((f, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-center justify-between rounded border p-2"
+                    >
+                      {f.name}
+                      <button
+                        type="button"
+                        onClick={() => arrayHelpers.remove(idx)}
+                        className="text-sm text-red-600"
                       >
-                        {f.name}
-                        <button
-                          type="button"
-                          onClick={() => arrayHelpers.remove(idx)}
-                          className="text-sm text-red-600"
-                        >
-                          Delete
-                        </button>
-                      </li>
-                    ),
-                  )}
+                        Delete
+                      </button>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )

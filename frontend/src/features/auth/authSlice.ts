@@ -1,5 +1,6 @@
 import { createAppSlice } from "../../app/createAppSlice"
 import type { PayloadAction } from "@reduxjs/toolkit"
+import { login as loginThunk } from "./authThunk"
 
 export type AuthState = {
   id: string
@@ -9,6 +10,8 @@ export type AuthState = {
   role: "EMPLOYEE" | "HR" | null
   onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
   login: boolean
+  loading: boolean
+  error: string | null
 }
 
 const initialState: AuthState = {
@@ -18,7 +21,9 @@ const initialState: AuthState = {
   email: "",
   role: "EMPLOYEE",
   onBoardingStatus: "unsubmitted",
-  login: true,
+  login: false,
+  loading: false,
+  error: null,
 }
 // const initialState: AuthState = {
 //   id: "68784931abe7312974122630", 
@@ -51,6 +56,7 @@ export const authSlice = createAppSlice({
       state.role = action.payload.role
       state.onBoardingStatus = action.payload.onBoardingStatus
       state.login = true
+      state.error = null
     }),
     logout: create.reducer(state => {
       state.id = ""
@@ -60,14 +66,41 @@ export const authSlice = createAppSlice({
       state.role = null
       state.onBoardingStatus = "unsubmitted"
       state.login = false
+      state.error = null
     }),
   }),
+  extraReducers: builder => {
+    builder
+      .addCase(loginThunk.pending, state => {
+        state.loading = true
+        state.error = null
+        state.login = false
+      })
+      .addCase(loginThunk.fulfilled, (state, action) => {
+        state.loading = false
+        state.id = action.payload.id
+        state.token = action.payload.token
+        state.username = action.payload.username
+        state.email = action.payload.email
+        state.role = action.payload.role
+        state.onBoardingStatus = action.payload.onBoardingStatus
+        state.login = true
+        state.error = null
+      })
+      .addCase(loginThunk.rejected, state => {
+        state.loading = false
+        state.login = false
+        state.error = action.payload?.message ?? "Login failed"
+      })
+  },
   selectors: {
     selectUser: state => state,
     selectRole: state => state.role,
     selectToken: state => state.token,
     selectOnBoardingStatus: state => state.onBoardingStatus,
     selectLoginStatus: state => state.login,
+    selectLoadingStatus: state => state.loading,
+    selectError: state => state.error,
   },
 })
 
@@ -78,5 +111,7 @@ export const {
   selectToken,
   selectOnBoardingStatus,
   selectLoginStatus,
+  selectLoadingStatus,
+  selectError,
 } = authSlice.selectors
 export default authSlice.reducer
