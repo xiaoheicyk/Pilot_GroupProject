@@ -18,7 +18,7 @@ exports.submitOnboarding = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
     try {
-        const employee = await Employee.findById(req.params.employeeId).populate('house');
+        const employee = await Employee.findById(req.params.userId).populate('house');
         if (!employee) return res.status(404).json({ error: 'Not found' });
 
         res.json(employee);
