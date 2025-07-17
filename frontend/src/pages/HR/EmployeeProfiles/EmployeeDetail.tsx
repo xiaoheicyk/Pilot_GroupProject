@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router"
 import { ArrowLeft } from "lucide-react"
-import { mockEmployees, Employee } from "./mockData"
+import { Employee } from "./mockData"
 import { Formik, Form, Field, ErrorMessage, FieldArray } from "formik"
 import SectionCard from "../../../components/SectionCard"
+import api from "../../../api"
 
 const EmployeeDetail = () => {
   const { id } = useParams<{ id: string }>()
@@ -13,24 +14,26 @@ const EmployeeDetail = () => {
   const [editMode, setEditMode] = useState(false)
 
   useEffect(() => {
-    // Simulate API call to fetch employee data
-    setLoading(true)
-    setTimeout(() => {
+    const fetchEmployeeDetails = async () => {
+      setLoading(true)
       try {
-        const foundEmployee = mockEmployees.find(emp => emp.id === id)
-        if (foundEmployee) {
-          setEmployee(foundEmployee)
-          setError(null)
-        } else {
-          setError(`Employee with ID ${id} not found`)
-        }
-      } catch (err) {
-        setError("Error loading employee data")
-        console.error(err)
+        const token = localStorage.getItem('token')
+        const response = await api.get(`/hr/employees/${id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        })
+        setEmployee(response.data)
+        setError(null)
+      } catch (err: any) {
+        console.error("Error fetching employee details:", err)
+        setError(err.response?.data?.error || `Error loading employee data: ${err.message}`)
       } finally {
         setLoading(false)
       }
-    }, 500) // Add delay to simulate API call
+    }
+    
+    fetchEmployeeDetails()
   }, [id])
 
   // Helper for labelled inputs
@@ -98,6 +101,24 @@ const EmployeeDetail = () => {
     return null
   }
 
+  // Handle form submissions with API calls
+  const updateEmployeeData = async (sectionName: string, values: any) => {
+    try {
+      const token = localStorage.getItem('token')
+      await api.put(`/hr/employees/${id}/${sectionName}`, values, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+      // Update the local state with the new values
+      setEmployee({...employee, ...values})
+      return true
+    } catch (err) {
+      console.error(`Error updating ${sectionName}:`, err)
+      return false
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 p-6">
       <div className="mb-6">
@@ -125,11 +146,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving name & identity:", values);
-          // In a real app, this would make an API call to update the employee
-          setEmployee({...employee, ...values});
-          alert("Employee information updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('identity', values)
+          if (success) {
+            alert("Employee information updated successfully!")
+          } else {
+            alert("Failed to update employee information. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -186,10 +209,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving contact info:", values);
-          setEmployee({...employee, ...values});
-          alert("Contact information updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('contact', values)
+          if (success) {
+            alert("Contact information updated successfully!")
+          } else {
+            alert("Failed to update contact information. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -215,10 +241,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving address:", values);
-          setEmployee({...employee, ...values});
-          alert("Address updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('address', values)
+          if (success) {
+            alert("Address updated successfully!")
+          } else {
+            alert("Failed to update address. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -246,10 +275,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving work authorization:", values);
-          setEmployee({...employee, ...values});
-          alert("Work authorization updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('workAuth', values)
+          if (success) {
+            alert("Work authorization updated successfully!")
+          } else {
+            alert("Failed to update work authorization. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -279,10 +311,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving emergency contacts:", values);
-          setEmployee({...employee, ...values});
-          alert("Emergency contacts updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('emergency', values)
+          if (success) {
+            alert("Emergency contacts updated successfully!")
+          } else {
+            alert("Failed to update emergency contacts. Please try again.")
+          }
         }}
         display={v => (
           <div>
@@ -367,10 +402,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving documents:", values);
-          setEmployee({...employee, ...values});
-          alert("Documents updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData('documents', values)
+          if (success) {
+            alert("Documents updated successfully!")
+          } else {
+            alert("Failed to update documents. Please try again.")
+          }
         }}
         display={v => (
           <ul className="space-y-1 text-slate-700">
