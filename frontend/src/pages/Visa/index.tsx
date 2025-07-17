@@ -208,6 +208,10 @@ const VisaStatusPage = () => {
   useEffect(() => {
     if (!loginStatus) {
       void navigate("/login")
+      return
+    }
+    if (onBoardingStatus !== "approved") {
+      void navigate("/info")
     }
   }, [loginStatus, navigate])
 
