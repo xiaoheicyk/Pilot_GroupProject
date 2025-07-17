@@ -19,6 +19,7 @@ exports.submitOnboarding = async (req, res) => {
 
 exports.getProfile = async (req, res) => {
   try {
+    console.log(req.user.id);
     const employee = await Employee.findOne({
       userId: req.user.id,
     }).populate("house");
