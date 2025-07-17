@@ -36,9 +36,7 @@ const NavBar = () => {
 
   /** links the current user should see */
   const links: NavItem[] =
-    role === "EMPLOYEE" ? EMPLOYEE_LINKS : role === "HR" ? HR_LINKS : []
-
-  console.log(links)
+    role === "Employee" ? EMPLOYEE_LINKS : role === "HR" ? HR_LINKS : []
 
   const handleLogout = () => {
     dispatch(logout())

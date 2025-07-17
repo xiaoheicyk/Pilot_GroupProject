@@ -46,7 +46,7 @@ const Login = () => {
 
   useEffect(() => {
     if (loginStatus) {
-      if (role === "EMPLOYEE") {
+      if (role === "Employee") {
         void navigate("/info")
       } else if (role === "HR") {
         void navigate("/hr")

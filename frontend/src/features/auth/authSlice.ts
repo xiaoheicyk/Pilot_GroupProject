@@ -7,8 +7,7 @@ export type AuthState = {
   token: string
   username: string
   email: string
-  role: "EMPLOYEE" | "HR" | null
-  onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
+  role: "Employee" | "HR" | null
   login: boolean
   loading: boolean
   error: string | null
@@ -19,8 +18,7 @@ const initialState: AuthState = {
   token: "",
   username: "",
   email: "",
-  role: "EMPLOYEE",
-  onBoardingStatus: "unsubmitted",
+  role: null,
   login: false,
   loading: false,
   error: null,
@@ -40,8 +38,7 @@ export type AuthPayload = {
   token: string
   username: string
   email: string
-  role: "EMPLOYEE" | "HR" | null
-  onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
+  role: "Employee" | "HR" | null
 }
 
 export const authSlice = createAppSlice({
@@ -54,7 +51,6 @@ export const authSlice = createAppSlice({
       state.username = action.payload.username
       state.email = action.payload.email
       state.role = action.payload.role
-      state.onBoardingStatus = action.payload.onBoardingStatus
       state.login = true
       state.error = null
     }),
@@ -64,7 +60,6 @@ export const authSlice = createAppSlice({
       state.username = ""
       state.email = ""
       state.role = null
-      state.onBoardingStatus = "unsubmitted"
       state.login = false
       state.error = null
     }),
@@ -83,7 +78,6 @@ export const authSlice = createAppSlice({
         state.username = action.payload.username
         state.email = action.payload.email
         state.role = action.payload.role
-        state.onBoardingStatus = action.payload.onBoardingStatus
         state.login = true
         state.error = null
       })
@@ -97,7 +91,6 @@ export const authSlice = createAppSlice({
     selectUser: state => state,
     selectRole: state => state.role,
     selectToken: state => state.token,
-    selectOnBoardingStatus: state => state.onBoardingStatus,
     selectLoginStatus: state => state.login,
     selectLoadingStatus: state => state.loading,
     selectError: state => state.error,
@@ -109,7 +102,6 @@ export const {
   selectUser,
   selectRole,
   selectToken,
-  selectOnBoardingStatus,
   selectLoginStatus,
   selectLoadingStatus,
   selectError,

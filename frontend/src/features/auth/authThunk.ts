@@ -12,8 +12,7 @@ export type LoginResponse = {
   email: string
   username: string
   token: string
-  role: "EMPLOYEE" | "HR" | null
-  onBoardingStatus: "unsubmitted" | "pending" | "rejected" | "approved"
+  role: "Employee" | "HR" | null
 }
 
 export type LoginError = {
@@ -26,7 +25,7 @@ export const login = createAsyncThunk<
   { rejectValue: LoginError }
 >("login", async (payload, thunkApi) => {
   try {
-    const res = await api.post<LoginResponse>("login", payload)
+    const res = await api.post<LoginResponse>("/auth/login", payload)
     return res.data
   } catch (error: unknown) {
     if (axios.isAxiosError(error)) {

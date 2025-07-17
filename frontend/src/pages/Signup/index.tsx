@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router"
+import { useNavigate, useParams } from "react-router"
 import AuthForm from "../../components/AuthForm"
 import type { AuthField } from "../../components/AuthForm"
 import { useState } from "react"
@@ -29,6 +29,7 @@ const fields: AuthField[] = [
 
 const Signup = () => {
   const navigate = useNavigate()
+  const { token } = useParams()
 
   const [loading, setLoading] = useState(false)
   const [serverMessage, setServerMessage] = useState<string | null>(null)
@@ -40,13 +41,16 @@ const Signup = () => {
     setErrorMessage(null)
 
     try {
-      const res = await api.post<{ message?: string }>("/signup", values)
+      const res = await api.post<{ message?: string }>("/auth/signup", {
+        ...values,
+        token,
+      })
       setServerMessage(res.data.message ?? "Signup successful")
       setTimeout(() => {
         void navigate("/login")
       }, 500)
-    } catch (error: unknown) {
-      if (axios.isAxiosError(error)) {
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
         const msg =
           (err.response?.data as { message?: string } | undefined)?.message ??
           err.message

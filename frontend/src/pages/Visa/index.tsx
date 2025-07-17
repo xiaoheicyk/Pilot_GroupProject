@@ -1,14 +1,10 @@
 import { useState, useEffect, type ChangeEvent } from "react"
 import { ShieldCheck, Upload, FileWarning } from "lucide-react"
 import { useAppSelector } from "../../app/hooks"
-import {
-  selectLoginStatus,
-  selectOnBoardingStatus,
-  selectUser, // available if your backend needs a userId in the URL
-} from "../../features/auth/authSlice"
+import { selectLoginStatus, selectUser } from "../../features/auth/authSlice"
 import { useNavigate } from "react-router"
 import axios from "axios"
-import api from "../../api" // your pre-configured axios instance
+import api from "../../api"
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -17,10 +13,10 @@ type DocKey = "OPT_RECEIPT" | "OPT_EAD" | "I_983" | "I_20"
 type Status = "NOT_UPLOADED" | "PENDING" | "APPROVED" | "REJECTED"
 
 type DocState = {
-  file?: File // file just uploaded locally (preview only; not from server)
-  url?: string // download link when approved by HR
+  file?: File // local, just-selected file (optimistic)
+  url?: string // server file URL
   status: Status
-  feedback?: string // HR rejection message
+  feedback?: string // future: HR comments (not in current schema)
 }
 
 type VisaWorkflow = {
@@ -28,106 +24,167 @@ type VisaWorkflow = {
   docs: Record<DocKey, DocState>
 }
 
-/* ---------------------- server response types --------------------- */
-/* Adjust to match your actual backend payload */
-type ServerDoc = {
-  status: string
+/* ---------------------- backend response shapes ------------------- */
+type ServerOptDoc = {
   url?: string
-  feedback?: string
+  status?: string // unsubmitted | pending | rejected | approval
 }
-type ServerWorkflow = {
-  visaType: string
-  docs: Partial<Record<string, ServerDoc>> // server keys (slugs) mapped below
+
+type ServerOpt = {
+  _id: string
+  employee: string
+  receipt?: ServerOptDoc
+  ead?: ServerOptDoc
+  i983?: ServerOptDoc
+  i20?: ServerOptDoc
+  createdAt?: string
+  updatedAt?: string
+}
+
+/* Minimal employee profile shape just to detect visa type */
+type ServerEmployeeLite = {
+  workAuth?: { visa?: string }
 }
 
 /* ------------------------------------------------------------------ */
-/* Mapping between API slugs and our DocKey enum                      */
+/* Endpoint paths (adjust!)                                           */
 /* ------------------------------------------------------------------ */
-const docSlug: Record<DocKey, string> = {
-  OPT_RECEIPT: "opt-receipt",
-  OPT_EAD: "opt-ead",
-  I_983: "i-983",
-  I_20: "i-20",
-}
-const slugToKey: Record<string, DocKey> = {
-  "opt-receipt": "OPT_RECEIPT",
-  "opt-ead": "OPT_EAD",
-  "i-983": "I_983",
-  "i-20": "I_20",
+const OPT_STATUS_URL = "/employee/opt" // GET -> getOptStatus
+const OPT_UPLOAD_URL = "/employee/opt" // POST -> uploadOptDocument
+const EMPLOYEE_PROFILE_URL = "/employee/profile"
+
+/* ------------------------------------------------------------------ */
+/* Backend type param map                                             */
+/* ------------------------------------------------------------------ */
+const backendType: Record<DocKey, "receipt" | "ead" | "i983" | "i20"> = {
+  OPT_RECEIPT: "receipt",
+  OPT_EAD: "ead",
+  I_983: "i983",
+  I_20: "i20",
 }
 
-/* Normalize server status into our Status union */
-const toStatus = (s?: string): Status => {
-  switch ((s ?? "").toUpperCase()) {
-    case "PENDING":
+/* ------------------------------------------------------------------ */
+/* Status normalization                                               */
+/* ------------------------------------------------------------------ */
+const normStatus = (s?: string): Status => {
+  switch ((s ?? "").toLowerCase()) {
+    case "pending":
       return "PENDING"
-    case "APPROVED":
-      return "APPROVED"
-    case "REJECTED":
+    case "rejected":
       return "REJECTED"
-    case "NOT_UPLOADED":
-    case "":
+    case "approval": // backend enum spelling
+    case "approved": // just in case
+      return "APPROVED"
     default:
       return "NOT_UPLOADED"
   }
 }
 
-/* Convert raw server workflow payload to our local shape */
-const normalizeWorkflow = (sw: ServerWorkflow): VisaWorkflow => {
-  const base: VisaWorkflow = {
-    visaType:
-      (sw.visaType?.toUpperCase() as VisaWorkflow["visaType"]) || "Other",
-    docs: {
-      OPT_RECEIPT: { status: "NOT_UPLOADED" },
-      OPT_EAD: { status: "NOT_UPLOADED" },
-      I_983: { status: "NOT_UPLOADED" },
-      I_20: { status: "NOT_UPLOADED" },
-    },
+/* ------------------------------------------------------------------ */
+/* OPT -> VisaWorkflow normalization                                 */
+/* ------------------------------------------------------------------ */
+const emptyDocs: VisaWorkflow["docs"] = {
+  OPT_RECEIPT: { status: "NOT_UPLOADED" },
+  OPT_EAD: { status: "NOT_UPLOADED" },
+  I_983: { status: "NOT_UPLOADED" },
+  I_20: { status: "NOT_UPLOADED" },
+}
+
+function optToWorkflow(
+  opt: ServerOpt | null | undefined,
+  visaType: VisaWorkflow["visaType"],
+): VisaWorkflow {
+  if (!opt) {
+    return { visaType, docs: { ...emptyDocs } }
   }
-  if (sw.docs) {
-    for (const [slug, sd] of Object.entries(sw.docs)) {
-      const key = slugToKey[slug]
-      if (!key) continue
-      base.docs[key] = {
-        status: toStatus(sd?.status),
-        url: sd?.url,
-        feedback: sd?.feedback,
-      }
+  const wf: VisaWorkflow = { visaType, docs: { ...emptyDocs } }
+
+  if (opt.receipt) {
+    wf.docs.OPT_RECEIPT = {
+      status: normStatus(opt.receipt.status),
+      url: opt.receipt.url,
     }
   }
-  return base
+  if (opt.ead) {
+    wf.docs.OPT_EAD = {
+      status: normStatus(opt.ead.status),
+      url: opt.ead.url,
+    }
+  }
+  if (opt.i983) {
+    wf.docs.I_983 = {
+      status: normStatus(opt.i983.status),
+      url: opt.i983.url,
+    }
+  }
+  if (opt.i20) {
+    wf.docs.I_20 = {
+      status: normStatus(opt.i20.status),
+      url: opt.i20.url,
+    }
+  }
+
+  return wf
 }
 
 /* ------------------------------------------------------------------ */
-/* API calls                                                          */
-/* Update endpoints to match your backend                             */
-/* ------------------------------------------------------------------ */
-
-/** Fetch current user's visa workflow (user derived from auth token). */
-async function fetchVisaWorkflow(): Promise<VisaWorkflow> {
-  const res = await api.get<ServerWorkflow>("/visa")
-  return normalizeWorkflow(res.data)
-}
-
-/** Upload a document; backend returns updated workflow (or doc). */
-async function uploadVisaDoc(key: DocKey, file: File): Promise<VisaWorkflow> {
-  const form = new FormData()
-  form.append("file", file)
-  const res = await api.post<ServerWorkflow>(`/visa/${docSlug[key]}`, form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  })
-  return normalizeWorkflow(res.data)
-}
-
-/* ------------------------------------------------------------------ */
-/* Determine if a doc is uploadable based on prerequisite approvals   */
+/* Helpers: sequential gating                                         */
 /* ------------------------------------------------------------------ */
 const canUploadNext = (docs: VisaWorkflow["docs"], key: DocKey) => {
   const order: DocKey[] = ["OPT_RECEIPT", "OPT_EAD", "I_983", "I_20"]
   const idx = order.indexOf(key)
-  if (idx === 0) return true // first doc has no dependency
+  if (idx === 0) return true
   const prev = docs[order[idx - 1]]
   return prev.status === "APPROVED"
+}
+
+/* ------------------------------------------------------------------ */
+/* API calls                                                          */
+/* ------------------------------------------------------------------ */
+
+/** Fetch minimal profile to detect whether user is OPT. */
+async function fetchVisaType(token: string): Promise<VisaWorkflow["visaType"]> {
+  try {
+    api.defaults.headers.Authorization = `Bearer ${token}`
+    const res = await api.get<ServerEmployeeLite>(EMPLOYEE_PROFILE_URL)
+    const v = res.data.workAuth?.visa ?? ""
+    return v.toUpperCase().includes("OPT") ? "OPT" : "Other"
+  } catch {
+    // if profile fetch fails, fall back (no block)
+    return "Other"
+  }
+}
+
+/** Fetch user's OPT record. Returns null if not yet created. */
+async function fetchOptStatus(): Promise<ServerOpt | null> {
+  const res = await api.get<ServerOpt | { message?: string }>(OPT_STATUS_URL)
+  const data = res.data as any
+  // When no OPT record, controller returns { message: 'No OPT uploaded yet' }
+  if (
+    data &&
+    typeof data === "object" &&
+    "message" in data &&
+    !("receipt" in data) &&
+    !("ead" in data)
+  ) {
+    return null
+  }
+  return data as ServerOpt
+}
+
+/** Upload doc -> backend creates/updates OPT; returns updated OPT record. */
+async function uploadOptDoc(key: DocKey, file: File): Promise<ServerOpt> {
+  const form = new FormData()
+  form.append("type", backendType[key]) // required by controller
+  form.append("file", file)
+  const res = await api.post<{ message: string; data: ServerOpt }>(
+    OPT_UPLOAD_URL,
+    form,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  )
+  return res.data.data
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,40 +192,47 @@ const canUploadNext = (docs: VisaWorkflow["docs"], key: DocKey) => {
 /* ------------------------------------------------------------------ */
 const VisaStatusPage = () => {
   const loginStatus = useAppSelector(selectLoginStatus)
-  const onBoardingStatus = useAppSelector(selectOnBoardingStatus)
-  const user = useAppSelector(selectUser) // if your backend needs userId in URL
+  const user = useAppSelector(selectUser) // { id, ... }
   const navigate = useNavigate()
 
-  const [flow, setFlow] = useState<VisaWorkflow | null>(null)
+  const [visaType, setVisaType] = useState<VisaWorkflow["visaType"]>("Other")
+  const [flow, setFlow] = useState<VisaWorkflow>(() => ({
+    visaType: "Other",
+    docs: { ...emptyDocs },
+  }))
   const [loading, setLoading] = useState(true)
   const [errMsg, setErrMsg] = useState<string | null>(null)
   const [uploadingKey, setUploadingKey] = useState<DocKey | null>(null)
 
-  /* Route guard: must be logged in; must have approved onboarding */
+  /* Route guard: must be logged in */
   useEffect(() => {
     if (!loginStatus) {
       void navigate("/login")
-      return
     }
-    if (onBoardingStatus !== "approved") {
-      void navigate("/info")
-    }
-  }, [loginStatus, onBoardingStatus, navigate])
+  }, [loginStatus, navigate])
 
-  /* Load workflow once gating conditions are satisfied */
+  /* Load profile visa + OPT status */
   useEffect(() => {
-    if (!loginStatus || onBoardingStatus !== "approved") return
+    if (!loginStatus || !user.id) return
+
     void (async () => {
       setLoading(true)
       setErrMsg(null)
       try {
-        const wf = await fetchVisaWorkflow()
-        setFlow(wf)
+        const [vt, opt] = await Promise.all([
+          fetchVisaType(user.token),
+          fetchOptStatus(),
+        ])
+        setVisaType(vt)
+        setFlow(optToWorkflow(opt, vt))
       } catch (err: unknown) {
         if (axios.isAxiosError(err)) {
           setErrMsg(
-            (err.response?.data as { message?: string } | undefined)?.message ??
-              err.message,
+            (
+              err.response?.data as
+                | { message?: string; error?: string }
+                | undefined
+            )?.message ?? err.message,
           )
         } else {
           setErrMsg("Failed to load visa status.")
@@ -177,33 +241,32 @@ const VisaStatusPage = () => {
         setLoading(false)
       }
     })()
-  }, [loginStatus, onBoardingStatus])
+  }, [loginStatus, user.id])
 
-  /* Local optimistic update for a specific doc */
+  /* Optimistic local patch */
   const updateDocLocal = (key: DocKey, patch: Partial<DocState>) => {
-    setFlow(f =>
-      f
-        ? {
-            ...f,
-            docs: { ...f.docs, [key]: { ...f.docs[key], ...patch } },
-          }
-        : f,
-    )
+    setFlow(f => ({
+      ...f,
+      docs: { ...f.docs, [key]: { ...f.docs[key], ...patch } },
+    }))
   }
 
-  /* Upload handler: optimistic pending -> request -> apply server state or fallback error */
+  /* Upload handler */
   const handleUpload = async (key: DocKey, file: File) => {
     updateDocLocal(key, { file, status: "PENDING" })
     setUploadingKey(key)
     try {
-      const wf = await uploadVisaDoc(key, file)
-      setFlow(wf)
+      const opt = await uploadOptDoc(key, file)
+      setFlow(f => optToWorkflow(opt, f.visaType))
     } catch (err: unknown) {
       let msg = "Upload failed."
       if (axios.isAxiosError(err)) {
         msg =
-          (err.response?.data as { message?: string } | undefined)?.message ??
-          err.message
+          (
+            err.response?.data as
+              | { message?: string; error?: string }
+              | undefined
+          )?.message ?? err.message
       }
       updateDocLocal(key, { status: "REJECTED", feedback: msg })
     } finally {
@@ -211,8 +274,8 @@ const VisaStatusPage = () => {
     }
   }
 
-  /* Non-OPT case (after data load) */
-  if (!loading && flow && flow.visaType !== "OPT") {
+  /* Gated non-OPT UI */
+  if (!loading && visaType !== "OPT") {
     return (
       <main className="mx-auto max-w-3xl p-6">
         <p className="rounded bg-slate-50 p-4 text-slate-700">
@@ -223,7 +286,7 @@ const VisaStatusPage = () => {
   }
 
   /* Loading / error UI */
-  if (loading || !flow) {
+  if (loading) {
     return (
       <main className="mx-auto max-w-3xl p-6">
         <p className="text-sm text-slate-600">
@@ -319,7 +382,7 @@ const VisaStatusPage = () => {
 export default VisaStatusPage
 
 /* ------------------------------------------------------------------ */
-/* DocumentStep: single document row/card                              */
+/* DocumentStep                                                        */
 /* ------------------------------------------------------------------ */
 type StepProps = {
   title: string
@@ -368,8 +431,21 @@ const DocumentStep = ({
         </span>
       </header>
 
-      {/* status text / downloads / feedback */}
       <div className="space-y-4">
+        {doc.url && (
+          <p className="text-sm">
+            Current file:{" "}
+            <a
+              href={doc.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-600 hover:underline"
+            >
+              View
+            </a>
+          </p>
+        )}
+
         {doc.status === "PENDING" && (
           <Alert
             icon={<ShieldCheck size={16} />}
@@ -394,14 +470,13 @@ const DocumentStep = ({
             className="bg-red-50 text-red-700"
           >
             <p className="font-medium">{messages.REJECTED}</p>
-            <p>{doc.feedback || "See HR remarks."}</p>
+            <p>{doc.feedback ?? "See HR remarks."}</p>
           </Alert>
         )}
 
         {extraDownloads}
       </div>
 
-      {/* upload control */}
       {uploadAllowed && doc.status !== "APPROVED" && (
         <div className="mt-4 flex items-center gap-4">
           <label
@@ -435,7 +510,9 @@ const DocumentStep = ({
   )
 }
 
-/* Simple alert wrapper */
+/* ------------------------------------------------------------------ */
+/* Simple alert wrapper                                                */
+/* ------------------------------------------------------------------ */
 const Alert = ({
   children,
   icon,
