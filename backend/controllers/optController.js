@@ -1,5 +1,6 @@
 const OPT = require('../models/OPT');
 const Employee = require('../models/Employee');
+const uploadFileToS3 = require('../utils/s3');
 
 exports.uploadOptDocument = async (req, res) => {
     try {
@@ -10,6 +11,10 @@ exports.uploadOptDocument = async (req, res) => {
         return res.status(400).json({ error: 'Invalid document type' });
         }
 
+        if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+        }
+
         const employee = await Employee.findOne({ userId: req.user.id });
         if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
@@ -18,13 +23,21 @@ exports.uploadOptDocument = async (req, res) => {
         opt = new OPT({ employee: employee._id });
         }
 
+        const result = await uploadFileToS3(file, `opt/${employee._id}`);
+        const fileUrl = result.Location;
+        
         opt[type] = {
-        url: `/uploads/${file.filename}`,
-        status: 'pending'
+        url: fileUrl,
+        status: 'pending',
         };
 
         await opt.save();
-        res.json({ message: `${type} uploaded`, data: opt });
+
+        res.json({
+        message: `${type} uploaded to S3`,
+        url: fileUrl,
+        data: opt,
+        });
     } catch (err) {
         console.error('❌ OPT upload error:', err);
         res.status(500).json({ error: 'Server error', detail: err.message });
