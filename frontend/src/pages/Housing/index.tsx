@@ -90,11 +90,11 @@ type ServerHouse = {
 /* API endpoints                                                      */
 /* ------------------------------------------------------------------ */
 /* Update to match your Express router if different */
-const API_HOUSE_ME = (id: string) => `/housing/${id}` // GET -> getMyHouse
+const API_HOUSE_ME = "/house" // GET -> getMyHouse
 const API_REPORTS_MY = "/report/maintenance" // GET -> getMyReports
 const API_REPORTS_CREATE = "/report/employee/maintenance" // POST -> createReport
-const API_REPORTS_COMMENT = "/housing/reports/comment" // POST -> addComment (expects body.reportId & body.content)
-const API_REPORTS_COMMENTS = (id: string) => `/housing/reports/${id}/comments` // GET -> getComments
+const API_REPORTS_COMMENT = "/report/comment" // POST -> addComment (expects body.reportId & body.content)
+const API_REPORTS_COMMENTS = (id: string) => `/report/comments/${id}` // GET -> getComments
 
 /* ------------------------------------------------------------------ */
 /* Normalizers                                                        */
@@ -167,12 +167,17 @@ const normHouse = (h: ServerHouse): House => {
 /* ------------------------------------------------------------------ */
 /* API helpers                                                        */
 /* ------------------------------------------------------------------ */
-async function fetchHouse(id: string): Promise<House> {
-  const res = await api.get<ServerHouse>(API_HOUSE_ME(id))
+async function fetchHouse(token: string): Promise<House> {
+  api.defaults.headers.Authorization = `Bearer ${token}`
+  const res = await api.get<ServerHouse>(API_HOUSE_ME)
   return normHouse(res.data)
 }
 
-async function fetchMyReports(currentUsername: string): Promise<Report[]> {
+async function fetchMyReports(
+  token: string,
+  currentUsername: string,
+): Promise<Report[]> {
+  api.defaults.headers.Authorization = `Bearer ${token}`
   const res = await api.get<ServerReport[]>(API_REPORTS_MY)
   return res.data.map(r => normReport(r, currentUsername))
 }
@@ -183,7 +188,9 @@ async function createReport(
     description: string
   },
   currentUsername: string,
+  token: string,
 ): Promise<Report> {
+  api.defaults.headers.Authorization = `Bearer ${token}`
   const res = await api.post<ServerReportWrapper>(API_REPORTS_CREATE, payload)
   return normReport(res.data.report, currentUsername)
 }
@@ -193,7 +200,9 @@ async function postComment(
   reportId: string,
   content: string,
   currentUsername: string,
+  token: string,
 ): Promise<Report> {
+  api.defaults.headers.Authorization = `Bearer ${token}`
   const res = await api.post<ServerReportWrapper>(API_REPORTS_COMMENT, {
     reportId,
     content,
@@ -202,7 +211,11 @@ async function postComment(
 }
 
 /* getComments gives latest full comment list (populated) */
-async function fetchComments(reportId: string): Promise<Comment[]> {
+async function fetchComments(
+  reportId: string,
+  token: string,
+): Promise<Comment[]> {
+  api.defaults.headers.Authorization = `Bearer ${token}`
   const res = await api.get<ServerCommentList>(API_REPORTS_COMMENTS(reportId))
   return res.data.map(normComment)
 }
@@ -249,7 +262,7 @@ const Housing = () => {
       setHouseLoading(true)
       setHouseErr(null)
       try {
-        const h = await fetchHouse(user.id)
+        const h = await fetchHouse(user.token)
         setHouse(h)
       } catch (err: unknown) {
         setHouseErr(extractErrMsg(err, "Failed to load housing details."))
@@ -257,7 +270,7 @@ const Housing = () => {
         setHouseLoading(false)
       }
     })()
-  }, [loginStatus, user.id])
+  }, [loginStatus, user.token])
 
   /* load my reports */
   useEffect(() => {
@@ -266,7 +279,7 @@ const Housing = () => {
       setReportsLoading(true)
       setReportsErr(null)
       try {
-        const rs = await fetchMyReports(user.username)
+        const rs = await fetchMyReports(user.token, user.username)
         setReports(rs)
       } catch (err: unknown) {
         setReportsErr(extractErrMsg(err, "Failed to load reports."))
@@ -274,7 +287,7 @@ const Housing = () => {
         setReportsLoading(false)
       }
     })()
-  }, [loginStatus, user.username])
+  }, [loginStatus, user.token, user.username])
 
   /* derived list: only mine (API already filters, but keep guard) */
   const myReports = useMemo(
@@ -294,6 +307,7 @@ const Housing = () => {
           description: newBody.trim(),
         },
         user.username,
+        user.token,
       )
       setReports(r => [newRep, ...r])
       setNewTitle("")
@@ -310,7 +324,12 @@ const Housing = () => {
   const handleComment = async (reportId: string, text: string) => {
     if (!text.trim()) return
     try {
-      const updated = await postComment(reportId, text.trim(), user.username)
+      const updated = await postComment(
+        reportId,
+        text.trim(),
+        user.username,
+        user.token,
+      )
       // update global reports list
       setReports(rs => rs.map(r => (r.id === reportId ? updated : r)))
       // update drawer
@@ -327,7 +346,7 @@ const Housing = () => {
     if (!selected) return
     void (async () => {
       try {
-        const cmts = await fetchComments(selected.id)
+        const cmts = await fetchComments(selected.id, user.token)
         setSelected(sel => (sel ? { ...sel, comments: cmts } : sel))
         // also mirror into top-level reports
         setReports(rs =>

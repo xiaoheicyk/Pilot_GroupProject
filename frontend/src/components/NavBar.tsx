@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link, NavLink } from "react-router"
+import { Link, NavLink, useNavigate } from "react-router"
 import { Menu, X } from "lucide-react"
 import { useAppSelector, useAppDispatch } from "../app/hooks"
 import { logout, selectRole, selectToken } from "../features/auth/authSlice"
@@ -31,6 +31,7 @@ const NavBar = () => {
   /* auth slice shape: { user: { role: "EMPLOYEE" | "HR" }, token: string | null } */
   const token = useAppSelector(selectToken)
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
 
   const role = useAppSelector(selectRole)
 
@@ -41,6 +42,7 @@ const NavBar = () => {
   const handleLogout = () => {
     dispatch(logout())
     setOpen(false)
+    void navigate("/")
   }
 
   /* Tailwind class helpers */
