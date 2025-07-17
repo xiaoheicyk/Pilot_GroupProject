@@ -151,3 +151,33 @@ exports.generateRegistrationToken = async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 };
+
+exports.assignHouse = async (req, res) => {
+    const { employeeId, houseId } = req.body;
+
+    if (!employeeId || !houseId) {
+        return res.status(400).json({ error: 'Missing employeeId or houseId' });
+    }
+
+    try {
+        const employee = await Employee.findById(employeeId);
+        const house = await House.findById(houseId);
+
+        if (!employee || !house) {
+        return res.status(404).json({ error: 'Employee or house not found' });
+        }
+
+        employee.house = house._id;
+        await employee.save();
+
+        if (!house.employeeId.includes(employee._id)) {
+        house.employeeId.push(employee._id);
+        await house.save();
+        }
+
+        res.json({ message: 'House assigned to employee' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+};
