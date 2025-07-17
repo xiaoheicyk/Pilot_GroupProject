@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react"
 import { useParams, Link } from "react-router"
 import { ArrowLeft } from "lucide-react"
-import { mockEmployees, Employee } from "./mockData"
+import { Employee } from "./mockData"
 import { Formik, Form, Field, ErrorMessage, FieldArray } from "formik"
 import SectionCard from "../../../components/SectionCard"
+import api from "../../../api"
+import { useAppSelector } from "../../../app/hooks"
+import { selectUser } from "../../../features/auth/authSlice"
 
 const EmployeeDetail = () => {
+  const user = useAppSelector(selectUser)
   const { id } = useParams<{ id: string }>()
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [loading, setLoading] = useState(true)
@@ -13,24 +17,28 @@ const EmployeeDetail = () => {
   const [editMode, setEditMode] = useState(false)
 
   useEffect(() => {
-    // Simulate API call to fetch employee data
-    setLoading(true)
-    setTimeout(() => {
+    const fetchEmployeeDetails = async () => {
+      setLoading(true)
       try {
-        const foundEmployee = mockEmployees.find(emp => emp.id === id)
-        if (foundEmployee) {
-          setEmployee(foundEmployee)
-          setError(null)
-        } else {
-          setError(`Employee with ID ${id} not found`)
-        }
-      } catch (err) {
-        setError("Error loading employee data")
-        console.error(err)
+        const response = await api.get(`/hr/employees/${id}`, {
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+        })
+        setEmployee(response.data)
+        setError(null)
+      } catch (err: any) {
+        console.error("Error fetching employee details:", err)
+        setError(
+          err.response?.data?.error ||
+            `Error loading employee data: ${err.message}`,
+        )
       } finally {
         setLoading(false)
       }
-    }, 500) // Add delay to simulate API call
+    }
+
+    fetchEmployeeDetails()
   }, [id])
 
   // Helper for labelled inputs
@@ -77,8 +85,16 @@ const EmployeeDetail = () => {
         <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              <svg
+                className="h-5 w-5 text-red-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="ml-3">
@@ -86,7 +102,10 @@ const EmployeeDetail = () => {
             </div>
           </div>
         </div>
-        <Link to="/hr/employee-profiles" className="text-indigo-600 hover:text-indigo-900">
+        <Link
+          to="/hr/employee-profiles"
+          className="text-indigo-600 hover:text-indigo-900"
+        >
           <ArrowLeft className="inline h-4 w-4 mr-1" />
           Back to Employee Profiles
         </Link>
@@ -98,10 +117,31 @@ const EmployeeDetail = () => {
     return null
   }
 
+  // Handle form submissions with API calls
+  const updateEmployeeData = async (sectionName: string, values: any) => {
+    try {
+      const token = localStorage.getItem("token")
+      await api.put(`/hr/employees/${id}/${sectionName}`, values, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      // Update the local state with the new values
+      setEmployee({ ...employee, ...values })
+      return true
+    } catch (err) {
+      console.error(`Error updating ${sectionName}:`, err)
+      return false
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-8 p-6">
       <div className="mb-6">
-        <Link to="/hr/employee-profiles" className="text-indigo-600 hover:text-indigo-900">
+        <Link
+          to="/hr/employee-profiles"
+          className="text-indigo-600 hover:text-indigo-900"
+        >
           <ArrowLeft className="inline h-4 w-4 mr-1" />
           Back to Employee Profiles
         </Link>
@@ -110,12 +150,19 @@ const EmployeeDetail = () => {
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
         <div className="px-4 py-5 sm:px-6">
           <h1 className="text-2xl font-bold text-gray-800">
-            {employee.firstName} {employee.middleName && `${employee.middleName} `}{employee.lastName}
-            {employee.preferredName && employee.preferredName !== employee.firstName && (
-              <span className="text-gray-500 ml-2 text-xl">({employee.preferredName})</span>
-            )}
+            {employee.firstName}{" "}
+            {employee.middleName && `${employee.middleName} `}
+            {employee.lastName}
+            {employee.preferredName &&
+              employee.preferredName !== employee.firstName && (
+                <span className="text-gray-500 ml-2 text-xl">
+                  ({employee.preferredName})
+                </span>
+              )}
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Employee Details</p>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">
+            Employee Details
+          </p>
         </div>
       </div>
 
@@ -125,11 +172,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving name & identity:", values);
-          // In a real app, this would make an API call to update the employee
-          setEmployee({...employee, ...values});
-          alert("Employee information updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("identity", values)
+          if (success) {
+            alert("Employee information updated successfully!")
+          } else {
+            alert("Failed to update employee information. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -149,7 +198,11 @@ const EmployeeDetail = () => {
             </li>
             <li>
               <span className="font-medium">Gender:</span>{" "}
-              {v.gender === "male" ? "Male" : v.gender === "female" ? "Female" : v.gender}
+              {v.gender === "male"
+                ? "Male"
+                : v.gender === "female"
+                  ? "Female"
+                  : v.gender}
             </li>
             <li>
               <span className="font-medium">Email:</span> {v.email}
@@ -186,10 +239,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving contact info:", values);
-          setEmployee({...employee, ...values});
-          alert("Contact information updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("contact", values)
+          if (success) {
+            alert("Contact information updated successfully!")
+          } else {
+            alert("Failed to update contact information. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -215,18 +271,23 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving address:", values);
-          setEmployee({...employee, ...values});
-          alert("Address updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("address", values)
+          if (success) {
+            alert("Address updated successfully!")
+          } else {
+            alert("Failed to update address. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
             <li>
-              <span className="font-medium">Street Address:</span> {v.building} {v.street}
+              <span className="font-medium">Street Address:</span> {v.building}{" "}
+              {v.street}
             </li>
             <li>
-              <span className="font-medium">City, State, ZIP:</span> {v.city}, {v.state} {v.zip}
+              <span className="font-medium">City, State, ZIP:</span> {v.city},{" "}
+              {v.state} {v.zip}
             </li>
           </ul>
         )}
@@ -246,10 +307,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving work authorization:", values);
-          setEmployee({...employee, ...values});
-          alert("Work authorization updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("workAuth", values)
+          if (success) {
+            alert("Work authorization updated successfully!")
+          } else {
+            alert("Failed to update work authorization. Please try again.")
+          }
         }}
         display={v => (
           <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
@@ -279,32 +343,41 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving emergency contacts:", values);
-          setEmployee({...employee, ...values});
-          alert("Emergency contacts updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("emergency", values)
+          if (success) {
+            alert("Emergency contacts updated successfully!")
+          } else {
+            alert("Failed to update emergency contacts. Please try again.")
+          }
         }}
         display={v => (
           <div>
             {v.emergency.length === 0 ? (
-              <p className="text-sm text-gray-500">No emergency contacts provided</p>
+              <p className="text-sm text-gray-500">
+                No emergency contacts provided
+              </p>
             ) : (
               v.emergency.map((contact, index) => (
                 <div key={index} className="mb-4 border-b pb-4 last:border-b-0">
                   <p className="font-medium">Contact #{index + 1}</p>
                   <ul className="grid grid-cols-2 gap-x-8 gap-y-1 text-slate-700">
                     <li>
-                      <span className="font-medium">Name:</span> {contact.firstName}{" "}
-                      {contact.middleName} {contact.lastName}
+                      <span className="font-medium">Name:</span>{" "}
+                      {contact.firstName} {contact.middleName}{" "}
+                      {contact.lastName}
                     </li>
                     <li>
-                      <span className="font-medium">Relationship:</span> {contact.relationship}
+                      <span className="font-medium">Relationship:</span>{" "}
+                      {contact.relationship}
                     </li>
                     <li>
-                      <span className="font-medium">Phone:</span> {contact.phone}
+                      <span className="font-medium">Phone:</span>{" "}
+                      {contact.phone}
                     </li>
                     <li>
-                      <span className="font-medium">Email:</span> {contact.email}
+                      <span className="font-medium">Email:</span>{" "}
+                      {contact.email}
                     </li>
                   </ul>
                 </div>
@@ -315,19 +388,25 @@ const EmployeeDetail = () => {
       >
         <FieldArray name="emergency">
           {arrayHelpers => {
-            const { form } = arrayHelpers;
-            const contacts = form.values.emergency;
+            const { form } = arrayHelpers
+            const contacts = form.values.emergency
 
             return (
               <div className="space-y-6">
                 {contacts.map((_: any, idx: number) => (
-                  <div key={idx} className="grid grid-cols-3 gap-4 border-b pb-4">
+                  <div
+                    key={idx}
+                    className="grid grid-cols-3 gap-4 border-b pb-4"
+                  >
                     <L name={`emergency.${idx}.firstName`} label="First name" />
                     <L name={`emergency.${idx}.middleName`} label="Middle" />
                     <L name={`emergency.${idx}.lastName`} label="Last name" />
                     <L name={`emergency.${idx}.phone`} label="Phone" />
                     <L name={`emergency.${idx}.email`} label="Email" />
-                    <L name={`emergency.${idx}.relationship`} label="Relationship" />
+                    <L
+                      name={`emergency.${idx}.relationship`}
+                      label="Relationship"
+                    />
 
                     <button
                       type="button"
@@ -349,14 +428,14 @@ const EmployeeDetail = () => {
                       phone: "",
                       email: "",
                       relationship: "",
-                    });
+                    })
                   }}
                   className="rounded bg-indigo-50 px-4 py-1 text-sm text-indigo-700"
                 >
                   + Add another contact
                 </button>
               </div>
-            );
+            )
           }}
         </FieldArray>
       </SectionCard>
@@ -367,10 +446,13 @@ const EmployeeDetail = () => {
         editable={true}
         submitted={true}
         initialValues={employee}
-        onSubmit={values => {
-          console.log("Saving documents:", values);
-          setEmployee({...employee, ...values});
-          alert("Documents updated successfully!");
+        onSubmit={async values => {
+          const success = await updateEmployeeData("documents", values)
+          if (success) {
+            alert("Documents updated successfully!")
+          } else {
+            alert("Failed to update documents. Please try again.")
+          }
         }}
         display={v => (
           <ul className="space-y-1 text-slate-700">
@@ -395,8 +477,8 @@ const EmployeeDetail = () => {
       >
         <FieldArray name="files">
           {arrayHelpers => {
-            const { form } = arrayHelpers;
-            const files = form.values.files;
+            const { form } = arrayHelpers
+            const files = form.values.files
 
             return (
               <div className="space-y-4">
@@ -404,12 +486,12 @@ const EmployeeDetail = () => {
                 <input
                   type="file"
                   onChange={e => {
-                    const file = e.currentTarget.files?.[0];
+                    const file = e.currentTarget.files?.[0]
                     if (file) {
                       arrayHelpers.push({
                         name: file.name,
                         url: URL.createObjectURL(file), // In a real app, this would upload to S3
-                      });
+                      })
                     }
                   }}
                 />
@@ -435,12 +517,12 @@ const EmployeeDetail = () => {
                   )}
                 </ul>
               </div>
-            );
+            )
           }}
         </FieldArray>
       </SectionCard>
     </main>
-  );
-};
+  )
+}
 
-export default EmployeeDetail;
+export default EmployeeDetail
