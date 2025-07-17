@@ -2,13 +2,16 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { Plus, Home, Trash, X, Search, Users, Bed, Table, Edit, Save, XCircle, Check } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
-import { mockHouses, House, Resident, Landlord, Facility, Car } from "./mockData";
+import { House, Resident, Landlord, Facility, Car } from "./mockData";
+import api from "../../../api";
 
 const HousingManagement: React.FC = () => {
   // Core state
-  const [houses, setHouses] = useState<House[]>(mockHouses);
+  const [houses, setHouses] = useState<House[]>([]);
   const [selectedHouse, setSelectedHouse] = useState<House | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal states
   const [showAddHouseModal, setShowAddHouseModal] = useState<boolean>(false);
@@ -55,6 +58,69 @@ const HousingManagement: React.FC = () => {
     email: ""
   });
 
+  // Fetch houses from API
+  useEffect(() => {
+    const fetchHouses = async () => {
+      try {
+        setLoading(true);
+        // 获取存储在localStorage中的JWT令牌
+        const token = localStorage.getItem('token');
+        
+        // 添加Authorization头到请求中
+        const response = await api.get('/hr/house', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        // Transform backend data to match frontend structure
+        const transformedHouses: House[] = response.data.map((house: any) => ({
+          id: house._id,
+          address: {
+            // Split address string into components or use as is
+            street: house.address || '',
+            city: '',
+            state: '',
+            zip: ''
+          },
+          landlord: {
+            name: house.landLord?.fullName || '',
+            phone: house.landLord?.phone || '',
+            email: house.landLord?.email || ''
+          },
+          facility: {
+            beds: house.bed || 0,
+            mattresses: house.mattress || 0,
+            tables: house.table || 0,
+            chairs: house.chair || 0
+          },
+          residents: house.employeeId?.map((employee: any) => ({
+            id: employee._id,
+            employeeId: employee._id,
+            name: `${employee.firstName || ''} ${employee.lastName || ''}`.trim(),
+            phone: employee.phone || '',
+            email: employee.email || '',
+            car: employee.car ? {
+              make: employee.car.make || '',
+              model: employee.car.model || '',
+              color: employee.car.color || '',
+              licensePlate: ''
+            } : undefined
+          })) || []
+        }));
+        
+        setHouses(transformedHouses);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching houses:', err);
+        setError('Failed to load houses. Please try again later.');
+        setLoading(false);
+      }
+    };
+
+    fetchHouses();
+  }, []);
+
   // Initialize edit forms when selected house changes
   useEffect(() => {
     if (selectedHouse) {
@@ -63,26 +129,6 @@ const HousingManagement: React.FC = () => {
       setEditFacility({ ...selectedHouse.facility });
     }
   }, [selectedHouse]);
-
-  // Filter houses based on search term
-  const filteredHouses = houses.filter(house => {
-    if (!searchTerm) return true;
-    
-    const searchLower = searchTerm.toLowerCase();
-    const addressMatch = 
-      house.address.street.toLowerCase().includes(searchLower) ||
-      house.address.city.toLowerCase().includes(searchLower) ||
-      house.address.state.toLowerCase().includes(searchLower) ||
-      house.address.zip.toLowerCase().includes(searchLower);
-    
-    const landlordMatch = house.landlord.name.toLowerCase().includes(searchLower);
-    
-    const residentMatch = house.residents.some(resident =>
-      resident.name.toLowerCase().includes(searchLower)
-    );
-    
-    return addressMatch || landlordMatch || residentMatch;
-  });
 
   // House selection
   const handleSelectHouse = (house: House) => {
@@ -95,12 +141,35 @@ const HousingManagement: React.FC = () => {
   };
 
   // Generic house update function
-  const updateHouse = (updatedHouse: House) => {
-    const updatedHouses = houses.map(house => 
-      house.id === updatedHouse.id ? updatedHouse : house
-    );
-    setHouses(updatedHouses);
-    setSelectedHouse(updatedHouse);
+  const updateHouse = async (updatedHouse: House) => {
+    try {
+      // Transform frontend data to match backend structure
+      const backendHouse = {
+        address: `${updatedHouse.address.street}, ${updatedHouse.address.city}, ${updatedHouse.address.state} ${updatedHouse.address.zip}`,
+        landLord: {
+          fullName: updatedHouse.landlord.name,
+          phone: updatedHouse.landlord.phone,
+          email: updatedHouse.landlord.email
+        },
+        bed: updatedHouse.facility.beds,
+        mattress: updatedHouse.facility.mattresses,
+        table: updatedHouse.facility.tables,
+        chair: updatedHouse.facility.chairs
+      };
+      
+      // Update in backend
+      await api.put(`/hr/house/${updatedHouse.id}`, backendHouse);
+      
+      // Update local state
+      const updatedHouses = houses.map(house => 
+        house.id === updatedHouse.id ? updatedHouse : house
+      );
+      setHouses(updatedHouses);
+      setSelectedHouse(updatedHouse);
+    } catch (err) {
+      console.error('Error updating house:', err);
+      setError('Failed to update house. Please try again later.');
+    }
   };
 
   // Address editing
@@ -178,21 +247,61 @@ const HousingManagement: React.FC = () => {
   };
 
   // Add new house
-  const handleAddHouse = () => {
-    const newHouseWithId: House = {
-      id: uuidv4(),
-      address: newHouse.address,
-      landlord: newHouse.landlord,
-      facility: newHouse.facility,
-      residents: []
-    };
-    setHouses([...houses, newHouseWithId]);
-    setShowAddHouseModal(false);
-    setNewHouse({
-      address: { street: "", city: "", state: "", zip: "" },
-      landlord: { name: "", phone: "", email: "" },
-      facility: { beds: 0, mattresses: 0, tables: 0, chairs: 0 }
-    });
+  const handleAddHouse = async () => {
+    try {
+      // Transform to backend format
+      const backendHouse = {
+        address: `${newHouse.address.street}, ${newHouse.address.city}, ${newHouse.address.state} ${newHouse.address.zip}`,
+        landLord: {
+          fullName: newHouse.landlord.name,
+          phone: newHouse.landlord.phone,
+          email: newHouse.landlord.email
+        },
+        bed: newHouse.facility.beds,
+        mattress: newHouse.facility.mattresses,
+        table: newHouse.facility.tables,
+        chair: newHouse.facility.chairs,
+        employeeId: []
+      };
+      
+      const response = await api.post('/hr/house', backendHouse);
+      
+      // Transform response to frontend format
+      const addedHouse: House = {
+        id: response.data.house._id,
+        address: {
+          street: newHouse.address.street,
+          city: newHouse.address.city,
+          state: newHouse.address.state,
+          zip: newHouse.address.zip
+        },
+        landlord: {
+          name: newHouse.landlord.name,
+          phone: newHouse.landlord.phone,
+          email: newHouse.landlord.email
+        },
+        facility: {
+          beds: newHouse.facility.beds,
+          mattresses: newHouse.facility.mattresses,
+          tables: newHouse.facility.tables,
+          chairs: newHouse.facility.chairs
+        },
+        residents: []
+      };
+      
+      setHouses([...houses, addedHouse]);
+      setShowAddHouseModal(false);
+      
+      // Reset new house form
+      setNewHouse({
+        address: { street: "", city: "", state: "", zip: "" },
+        landlord: { name: "", phone: "", email: "" },
+        facility: { beds: 0, mattresses: 0, tables: 0, chairs: 0 }
+      });
+    } catch (err) {
+      console.error('Error adding house:', err);
+      setError('Failed to add house. Please try again later.');
+    }
   };
 
   // Delete house
@@ -201,36 +310,67 @@ const HousingManagement: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const handleDeleteHouse = () => {
+  const handleDeleteHouse = async () => {
     if (!houseToDelete) return;
-    const updatedHouses = houses.filter(house => house.id !== houseToDelete);
-    setHouses(updatedHouses);
-    if (selectedHouse?.id === houseToDelete) {
-      setSelectedHouse(null);
+    
+    try {
+      await api.delete(`/hr/house/${houseToDelete}`);
+      
+      const updatedHouses = houses.filter(house => house.id !== houseToDelete);
+      setHouses(updatedHouses);
+      
+      if (selectedHouse && selectedHouse.id === houseToDelete) {
+        setSelectedHouse(null);
+      }
+      
+      setShowDeleteModal(false);
+      setHouseToDelete(null);
+    } catch (err) {
+      console.error('Error deleting house:', err);
+      setError('Failed to delete house. Please try again later.');
     }
-    setShowDeleteModal(false);
-    setHouseToDelete(null);
   };
 
   // Add new resident
-  const handleAddResident = () => {
+  const handleAddResident = async () => {
     if (!selectedHouse) return;
-    const newResidentWithId: Resident = {
-      id: uuidv4(),
-      ...newResident
-    };
-    const updatedHouse = {
-      ...selectedHouse,
-      residents: [...selectedHouse.residents, newResidentWithId]
-    };
-    updateHouse(updatedHouse);
-    setShowAddResidentModal(false);
-    setNewResident({
-      employeeId: "",
-      name: "",
-      phone: "",
-      email: ""
-    });
+    
+    try {
+      // Call assign-house API
+      await api.post('/hr/assign-house', {
+        employeeId: newResident.employeeId,
+        houseId: selectedHouse.id
+      });
+      
+      // Create new resident object
+      const resident: Resident = {
+        id: uuidv4(), // We'll use a temporary ID until we refresh data
+        employeeId: newResident.employeeId,
+        name: newResident.name,
+        phone: newResident.phone,
+        email: newResident.email
+      };
+      
+      // Update local state
+      const updatedHouse = {
+        ...selectedHouse,
+        residents: [...selectedHouse.residents, resident]
+      };
+      
+      updateHouse(updatedHouse);
+      setShowAddResidentModal(false);
+      
+      // Reset form
+      setNewResident({
+        employeeId: "",
+        name: "",
+        phone: "",
+        email: ""
+      });
+    } catch (err) {
+      console.error('Error adding resident:', err);
+      setError('Failed to add resident. Please try again later.');
+    }
   };
 
   // Delete resident
@@ -295,12 +435,12 @@ const HousingManagement: React.FC = () => {
         {/* House List */}
         <div className="w-1/3 bg-white rounded-lg shadow overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="font-medium text-lg">Houses ({filteredHouses.length})</h2>
+            <h2 className="font-medium text-lg">Houses ({houses.length})</h2>
           </div>
           <div className="overflow-y-auto max-h-[70vh]">
-            {filteredHouses.length > 0 ? (
+            {houses.length > 0 ? (
               <ul className="divide-y divide-gray-200">
-                {filteredHouses.map(house => (
+                {houses.map(house => (
                   <li 
                     key={house.id}
                     className={`p-4 cursor-pointer hover:bg-gray-50 ${selectedHouse?.id === house.id ? 'bg-indigo-50' : ''}`}
@@ -469,8 +609,8 @@ const HousingManagement: React.FC = () => {
                   ) : (
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <p className="font-medium">{selectedHouse.landlord.name}</p>
-                      <p className="text-gray-600 text-sm mt-1">Phone: {selectedHouse.landlord.phone}</p>
-                      <p className="text-gray-600 text-sm">Email: {selectedHouse.landlord.email}</p>
+                      <p className="text-sm text-gray-500 text-sm mt-1">Phone: {selectedHouse.landlord.phone}</p>
+                      <p className="text-sm text-gray-500">Email: {selectedHouse.landlord.email}</p>
                     </div>
                   )}
                 </div>
@@ -1019,6 +1159,25 @@ const HousingManagement: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      
+      {/* Loading and Error States */}
+      {loading && (
+        <div className="flex justify-center items-center h-64">
+          <div className="text-lg text-gray-600">Loading houses...</div>
+        </div>
+      )}
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <p>{error}</p>
+        </div>
+      )}
+      
+      {!loading && !error && houses.length === 0 && (
+        <div className="flex justify-center items-center h-64">
+          <div className="text-lg text-gray-600">No houses found. Add a new house to get started.</div>
         </div>
       )}
     </div>

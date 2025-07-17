@@ -20,6 +20,15 @@ const initialState: AuthState = {
   onBoardingStatus: "unsubmitted",
   login: true,
 }
+// const initialState: AuthState = {
+//   id: "68784931abe7312974122630", 
+//   token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4Nzg0OTMxYWJlNzMxMjk3NDEyMjYzMCIsInJvbGUiOiJIUiIsImlhdCI6MTc1Mjc0MjA2MiwiZXhwIjoxNzUyODI4NDYyfQ.usqBhW9tkcSOSO9AnPR20fDiYvDBuoF1OzExe-T1vN4", 
+//   username: "hradmin",
+//   email: "hr@example.com",
+//   role: "HR",
+//   onBoardingStatus: "approved",
+//   login: true,
+// }
 
 export type AuthPayload = {
   id: string

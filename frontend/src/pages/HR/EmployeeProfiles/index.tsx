@@ -1,13 +1,40 @@
 import { useState, useEffect } from "react"
 import { Link } from "react-router"
 import { Search } from "lucide-react"
-import { mockEmployees, Employee } from "./mockData"
-
+import api from "../../../api"
+import { Employee } from "./mockData"
 
 const EmployeeProfiles = () => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>(mockEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   
+  // Fetch employees from the backend API
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('token');
+        const response = await api.get('/hr/employees', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        setEmployees(response.data);
+        setFilteredEmployees(response.data);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching employees:', err);
+        setError('Failed to load employees. Please try again later.');
+        setLoading(false);
+      }
+    };
+
+    fetchEmployees();
+  }, []);
+
   // 按姓氏字母顺序排序
   const sortedEmployees = [...filteredEmployees].sort((a, b) => 
     a.lastName.localeCompare(b.lastName)
@@ -16,19 +43,19 @@ const EmployeeProfiles = () => {
   // 搜索功能
   useEffect(() => {
     if (searchTerm.trim() === "") {
-      setFilteredEmployees(mockEmployees);
+      setFilteredEmployees(employees);
       return;
     }
     
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    const filtered = mockEmployees.filter(employee => 
+    const filtered = employees.filter(employee => 
       employee.firstName.toLowerCase().includes(lowerCaseSearchTerm) ||
       employee.lastName.toLowerCase().includes(lowerCaseSearchTerm) ||
       employee.preferredName.toLowerCase().includes(lowerCaseSearchTerm)
     );
     
     setFilteredEmployees(filtered);
-  }, [searchTerm]);
+  }, [searchTerm, employees]);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -72,67 +99,82 @@ const EmployeeProfiles = () => {
         </div>
       )}
       
+      {/* Loading and Error States */}
+      {loading && (
+        <div className="text-center py-4">
+          <p className="text-gray-600">Loading employees...</p>
+        </div>
+      )}
+      
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+          <p>{error}</p>
+        </div>
+      )}
+      
       {/* 员工列表 */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Name
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                SSN
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Work Authorization
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Phone Number
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Email
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {sortedEmployees.map((employee) => (
-              <tr key={employee.id}>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <Link 
-                    to={`/hr/employee-profiles/${employee.id}`} 
-                    target="_blank"
-                    className="text-indigo-600 hover:text-indigo-900"
-                  >
-                    {employee.firstName} {employee.middleName && `${employee.middleName} `}{employee.lastName}
-                    {employee.preferredName && employee.preferredName !== employee.firstName && (
-                      <span className="text-gray-500 ml-1">({employee.preferredName})</span>
-                    )}
-                  </Link>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {employee.ssn}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {employee.visaTitle}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {employee.cellPhone}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {employee.email}
-                </td>
+      {!loading && !error && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Name
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  SSN
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Work Authorization
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Phone Number
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        
-        {/* 无结果时显示 */}
-        {sortedEmployees.length === 0 && (
-          <div className="px-6 py-4 text-center text-gray-500">
-            No employees found.
-          </div>
-        )}
-      </div>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {sortedEmployees.map((employee) => (
+                <tr key={employee.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <Link 
+                      to={`/hr/employee-profiles/${employee.id}`} 
+                      target="_blank"
+                      className="text-indigo-600 hover:text-indigo-900"
+                    >
+                      {employee.firstName} {employee.middleName && `${employee.middleName} `}{employee.lastName}
+                      {employee.preferredName && employee.preferredName !== employee.firstName && (
+                        <span className="text-gray-500 ml-1">({employee.preferredName})</span>
+                      )}
+                    </Link>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {employee.ssn}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {employee.visaTitle}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {employee.cellPhone}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {employee.email}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          
+          {/* 无结果时显示 */}
+          {sortedEmployees.length === 0 && (
+            <div className="px-6 py-4 text-center text-gray-500">
+              No employees found.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
